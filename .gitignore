@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# VS Hidden Directory
+Binary Module/GModDXR/.vs
