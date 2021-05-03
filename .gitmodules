@@ -2,6 +2,6 @@
 	path = gmod-module-base
 	url = https://github.com/Facepunch/gmod-module-base.git
 	branch = development
-[submodule "Binary Module/Falcor"]
-	path = Binary Module/Falcor
+[submodule "Binary-Module/Falcor"]
+	path = Binary-Module/Falcor
 	url = https://github.com/NVIDIAGameWorks/Falcor.git

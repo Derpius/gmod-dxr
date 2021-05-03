@@ -32,4 +32,7 @@
 *.app
 
 # VS Hidden Directory
-Binary Module/GModDXR/.vs
+Binary-Module/GModDXR/.vs
+
+# Build Directory
+Binary-Module/GModDXR/Bin
