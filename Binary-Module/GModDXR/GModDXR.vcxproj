@@ -113,7 +113,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\HelloDXR.ps.slang" />
+    <None Include="Shaders\debug.rt.slang" />
     <None Include="Shaders\HelloDXR.rt.slang" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

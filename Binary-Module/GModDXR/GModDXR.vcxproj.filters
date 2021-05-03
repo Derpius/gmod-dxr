@@ -27,10 +27,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\HelloDXR.ps.slang">
+    <None Include="Shaders\HelloDXR.rt.slang">
       <Filter>Shader Files</Filter>
     </None>
-    <None Include="Shaders\HelloDXR.rt.slang">
+    <None Include="Shaders\debug.rt.slang">
       <Filter>Shader Files</Filter>
     </None>
   </ItemGroup>
