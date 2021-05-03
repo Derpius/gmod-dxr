@@ -1,0 +1,44 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31129.286
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GModDXR", "GModDXR.vcxproj", "{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}"
+	ProjectSection(ProjectDependencies) = postProject
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9} = {2C535635-E4C5-4098-A928-574F0E7CD5F9}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Falcor", "..\Falcor\Source\Falcor\Falcor.vcxproj", "{2C535635-E4C5-4098-A928-574F0E7CD5F9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		DebugD3D12|x64 = DebugD3D12|x64
+		DebugVK|x64 = DebugVK|x64
+		ReleaseD3D12|x64 = ReleaseD3D12|x64
+		ReleaseVK|x64 = ReleaseVK|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.DebugD3D12|x64.ActiveCfg = DebugD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.DebugD3D12|x64.Build.0 = DebugD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.DebugVK|x64.ActiveCfg = DebugD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.DebugVK|x64.Build.0 = DebugD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.ReleaseD3D12|x64.ActiveCfg = ReleaseD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.ReleaseD3D12|x64.Build.0 = ReleaseD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.ReleaseVK|x64.ActiveCfg = ReleaseD3D12|x64
+		{B0156CD9-5F5C-479E-8E81-FDFD2A650BBC}.ReleaseVK|x64.Build.0 = ReleaseD3D12|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.DebugD3D12|x64.ActiveCfg = DebugD3D12|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.DebugD3D12|x64.Build.0 = DebugD3D12|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.DebugVK|x64.ActiveCfg = DebugVK|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.DebugVK|x64.Build.0 = DebugVK|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.ReleaseD3D12|x64.ActiveCfg = ReleaseD3D12|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.ReleaseD3D12|x64.Build.0 = ReleaseD3D12|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.ReleaseVK|x64.ActiveCfg = ReleaseVK|x64
+		{2C535635-E4C5-4098-A928-574F0E7CD5F9}.ReleaseVK|x64.Build.0 = ReleaseVK|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1826DA00-2283-4DD0-90E3-12B7D8157AC0}
+	EndGlobalSection
+EndGlobal
