@@ -37,6 +37,7 @@ cbuffer PerFrameCB
 	float tanHalfFovY;
 	uint sampleIndex;
 	bool useDOF;
+	float3 kClearColour;
 };
 
 struct PrimaryRayData
