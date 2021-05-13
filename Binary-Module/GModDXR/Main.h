@@ -14,6 +14,12 @@ namespace GModDXR
 		float3 sunDirection;
 	};
 
+	struct TextureList
+	{
+		std::string baseColour;
+		std::string normalMap;
+	};
+
 	class Renderer : public IRenderer
 	{
 	public:
@@ -25,7 +31,8 @@ namespace GModDXR
 		void onGuiRender(Gui* pGui) override;
 
 		void setWorldData(const WorldData* data);
-		void setCameraDefaults(const float3 pos, const float3 up);
+		void setCameraDefaults(const float3 pos, const float3 target);
+		void setEntities(std::vector<TriangleMesh::SharedPtr>* meshes, std::vector<Material::SharedPtr>* materials, std::vector<SceneBuilder::Node>* nodes, std::vector<TextureList>* textures);
 
 	private:
 		SceneBuilder::SharedPtr pBuilder;
@@ -35,7 +42,7 @@ namespace GModDXR
 
 		Camera::SharedPtr pCamera;
 		float3 cameraStartPos;
-		float3 cameraStartUp;
+		float3 cameraStartTarget;
 
 		bool useDOF = false;
 		RtProgramVars::SharedPtr pRtVars;
@@ -44,6 +51,11 @@ namespace GModDXR
 		uint32_t sampleIndex = 0xdeadbeef;
 
 		const WorldData* pWorldData;
+
+		std::vector<TriangleMesh::SharedPtr>* pMeshes;
+		std::vector<Material::SharedPtr>* pMaterials;
+		std::vector<SceneBuilder::Node>* pNodes;
+		std::vector<TextureList>* pTextures;
 
 		float zNear = 0.01f;
 		float zFar = 100.f;

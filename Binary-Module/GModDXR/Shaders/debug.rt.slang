@@ -49,11 +49,20 @@ void primaryClosestHit(
 	uniform HitShaderParams hitParams,
 	inout PrimaryRayData hitData, in BuiltInTriangleIntersectionAttributes attribs
 ) {
-	VertexData v = getVertexData(hitParams, PrimitiveIndex(), attribs);
+	// Get the hit-point data
+	float3 rayOrigW = WorldRayOrigin();
+	float3 rayDirW = WorldRayDirection();
+	float hitT = RayTCurrent();
+	uint triangleIndex = PrimitiveIndex();
 
-	hitData.colour.rgb = gScene.materials[gScene.getMaterialID(hitParams.getGlobalHitID())].baseColor.rgb * max(dot(gScene.getLight(0).dirW, v.normalW), 0.3);
+	// prepare the shading data
+	VertexData v = getVertexData(hitParams, triangleIndex, attribs);
+	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
+	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
+
+	hitData.colour.rgb = sd.diffuse;
 	hitData.colour.a = 1;
-	hitData.hitT = RayTCurrent();
+	hitData.hitT = hitT;
 }
 
 [shader("anyhit")]

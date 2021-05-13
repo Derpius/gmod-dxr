@@ -3,39 +3,32 @@ if SERVER then return end
 PLR = LocalPlayer()
 
 local unitMatrix = {
-	{1, 0, 0},
-	{0, 1, 0},
-	{0, 0, 1},
+	{1, 0, 0, 0},
+	{0, 1, 0, 0},
+	{0, 0, 1, 0},
+	{0, 0, 0, 1},
 }
 
 local function GModMatrixToCPP(matrix)
-	local ang = {
-		{0, 0, 0},
-		{0, 0, 0},
-		{0, 0, 0},
-	}
-	local invAng = {
-		{0, 0, 0},
-		{0, 0, 0},
-		{0, 0, 0},
+	local ret = {
+		{1, 0, 0, 0},
+		{0, 1, 0, 0},
+		{0, 0, 1, 0},
+		{0, 0, 0, 1},
 	}
 
 	local nonZero = false
-	for row = 1, 3 do
-		for col = 1, 3 do
+	for row = 1, 4 do
+		for col = 1, 4 do
 			local cell = matrix:GetField(row, col)
-			if cell != 0 then nonZero = true end
+			if cell ~= 0 then nonZero = true end
 
-			ang[row][col] = cell
-			invAng[col][row] = cell
+			ret[row][col] = cell
 		end
 	end
 
-	if not nonZero then
-		ang, invAng = unitMatrix, unitMatrix
-	end
-
-	return ang, invAng
+	if not nonZero then ret = unitMatrix end
+	return ret
 end
 
 print("=====LOADING GARRY'S MOD DIRECTX RAYTRACING=====")
@@ -69,6 +62,27 @@ end
 
 
 --[[
+	Entities
+]]
+local entities = {}
+for _, v in pairs(ents.FindByClass("prop_physics")) do
+	local meshes = util.GetModelMeshes(v:GetModel())
+	for i = 1, #meshes do
+		local subMat = Material(v:GetSubMaterial(i - 1) == "" and v:GetMaterials()[i] or v:GetSubMaterial(i - 1))
+
+		entities[#entities + 1] = {
+			name = "Prop",
+			model = meshes[i].triangles,
+			colour = Vector(v:GetColor().r / 255, v:GetColor().g / 255, v:GetColor().b / 255),
+			alpha = v:GetColor().a / 255,
+			transform = GModMatrixToCPP(v:GetWorldTransformMatrix()),
+			baseTexture = subMat:GetString("$basetexture") and subMat:GetString("$basetexture")..".png" or "missingtexture.png",
+			normalTexture = subMat:GetString("$bumpmap") and subMat:GetString("$bumpmap")..".png" or ""
+		}
+	end
+end
+
+--[[
 	Initialise and launch Falcor application
 ]]
 print("GModDXR: Launching Falcor...")
@@ -76,6 +90,7 @@ LaunchFalcor(
 	worldVertices,
 	#worldVertices,
 	PLR:EyePos(),
-	PLR:EyeAngles():Up(),
-	util.GetSunInfo().direction
+	PLR:EyePos() + PLR:EyeAngles():Forward(),
+	util.GetSunInfo().direction,
+	entities
 )

@@ -1,5 +1,4 @@
 #define FALCOR_D3D12
-#define GM_MODULE
 
 #include "Main.h"
 #include "GarrysMod/Lua/Interface.h"
@@ -28,39 +27,41 @@ namespace GModDXR
 		pBuilder->addLight(pSun);
 
 		// Load the game world into the scene
-		SceneBuilder::Mesh world;
-		world.name = "World";
-		world.faceCount = pWorldData->length / 3U;
-		world.vertexCount = pWorldData->length;
-		world.indexCount = pWorldData->length;
-
-		std::vector<uint32_t> indices;
-		for (size_t i = 0; i < pWorldData->length; i++)
-			indices.push_back(i);
-		world.pIndices = indices.data();
-
-		world.topology = Vao::Topology::TriangleList;
+		TriangleMesh::SharedPtr pWorld = TriangleMesh::create();
+		pWorld->setName("World");
+		for (size_t i = 0; i < pWorldData->length; i++) {
+			pWorld->addVertex(pWorldData->pPositions[i], pWorldData->pNormals[i], float2(0.f, 0.f));
+			if (i % 3 == 2) pWorld->addTriangle(i - 2U, i - 1U, i);
+		}
 		
 		Material::SharedPtr pWorldMat = Material::create("World");
 		pWorldMat->setShadingModel(ShadingModelMetalRough);
 		pWorldMat->setBaseColor(float4(0.9f));
 		pWorldMat->setRoughness(1.f);
 		pWorldMat->setMetallic(0.f);
-		world.pMaterial = pWorldMat;
-
-		world.positions = SceneBuilder::Mesh::Attribute<float3>{ pWorldData->pPositions.data(), SceneBuilder::Mesh::AttributeFrequency::FaceVarying };
-		world.normals = SceneBuilder::Mesh::Attribute<float3>{ pWorldData->pNormals.data(), SceneBuilder::Mesh::AttributeFrequency::FaceVarying };
 
 		SceneBuilder::Node worldNode;
 		worldNode.name = "World";
-		worldNode.transform = glm::mat4(
-			float4(1.f, 0.f, 0.f, 0.f),
-			float4(0.f, 1.f, 0.f, 0.f),
-			float4(0.f, 0.f, 1.f, 0.f),
-			float4(0.f, 0.f, 0.f, 1.f)
-		);
+		worldNode.transform = glm::identity<glm::mat4>();
 
-		pBuilder->addMeshInstance(pBuilder->addMesh(world), pBuilder->addNode(worldNode));
+		pBuilder->addMeshInstance(pBuilder->addNode(worldNode), pBuilder->addTriangleMesh(pWorld, pWorldMat));
+
+		// Iterate over all entities
+		for (size_t i = 0; i < pMeshes->size(); i++) {
+			// Load image textures
+			std::string filename = std::string("Overrides/materials/") + pTextures->at(i).baseColour;
+			std::string fullPath;
+			if (!findFileInDataDirectories(filename, fullPath)) {
+				filename = std::string("Overrides/materials/missingtexture.png");
+			}
+			pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::BaseColor, filename);
+
+			if (!pTextures->at(i).normalMap.empty())
+				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Normal, std::string("Overrides/materials/") + pTextures->at(i).normalMap);
+
+			// Add mesh instance
+			pBuilder->addMeshInstance(pBuilder->addNode(pNodes->at(i)), pBuilder->addTriangleMesh(pMeshes->at(i), pMaterials->at(i)));
+		}
 
 		pScene = pBuilder->getScene();
 		if (!pScene) logError("Failed to load scene");
@@ -69,14 +70,14 @@ namespace GModDXR
 
 		// Update the controllers
 		float radius = pScene->getSceneBounds().radius();
-		pScene->setCameraSpeed(radius * 0.25f);
+		pScene->setCameraSpeed(500.f);
 		zNear = std::max(0.1f, radius / 750.0f);
 		zFar = radius * 10.f;
 
 		pCamera->setDepthRange(zNear, zFar);
 		pCamera->setAspectRatio(static_cast<float>(pTargetFbo->getWidth()) / static_cast<float>(pTargetFbo->getHeight()));
 		pCamera->setPosition(cameraStartPos);
-		pCamera->setUpVector(cameraStartUp);
+		pCamera->setTarget(cameraStartTarget);
 
 		RtProgram::Desc rtProgDesc;
 		rtProgDesc.addShaderLibrary(std::string(_SHADER_DIR) + "debug.rt.slang").setRayGen("rayGen");
@@ -164,10 +165,18 @@ namespace GModDXR
 		pWorldData = data;
 	}
 
-	void Renderer::setCameraDefaults(const float3 pos, const float3 up)
+	void Renderer::setCameraDefaults(const float3 pos, const float3 target)
 	{
 		cameraStartPos = pos;
-		cameraStartUp = up;
+		cameraStartTarget = target;
+	}
+
+	void Renderer::setEntities(std::vector<TriangleMesh::SharedPtr>* meshes, std::vector<Material::SharedPtr>* materials, std::vector<SceneBuilder::Node>* nodes, std::vector<TextureList>* textures)
+	{
+		pMeshes = meshes;
+		pMaterials = materials;
+		pNodes = nodes;
+		pTextures = textures;
 	}
 
 	std::vector<float3> computeBrushNormals(const float3* positions, const size_t count)
@@ -177,7 +186,7 @@ namespace GModDXR
 		for (size_t i = 0; i < count; i += 3) {
 			// Compute normalised cross product of v0 and v1 localised to v2 and appened to normals vector
 			// (may need to invert the normal here depending on what winding my triangulation code spits out)
-			float3 normal = glm::normalize(glm::cross(positions[i] - positions[i + 2], positions[i + 1] - positions[i + 2]));
+			float3 normal = -glm::normalize(glm::cross(positions[i] - positions[i + 2], positions[i + 1] - positions[i + 2]));
 			normals.push_back(normal);
 			normals.push_back(normal);
 			normals.push_back(normal);
@@ -186,18 +195,24 @@ namespace GModDXR
 	}
 }
 
+Falcor::float3 gmodToGLMVec(Vector vec) { return Falcor::float3(vec.x, vec.z, -vec.y); }
+
 static std::thread mainThread;
 static std::mutex mut;
 static GModDXR::WorldData worldData;
 static bool TRACING = false;
-void falcorThreadWrapper(const Vector camPos, const Vector camUp) {
+void falcorThreadWrapper(
+	const Vector camPos, const Vector camTarget,
+	std::vector<Falcor::TriangleMesh::SharedPtr> meshes, std::vector<Falcor::Material::SharedPtr> materials, std::vector<Falcor::SceneBuilder::Node> nodes, std::vector<GModDXR::TextureList> textures
+) {
 	// Create renderer
 	GModDXR::Renderer::UniquePtr pRenderer = std::make_unique<GModDXR::Renderer>();
 
 	// Get raw casted pointer to GModDXR::Renderer to access custom methods in the derived class
 	GModDXR::Renderer* pRendererRaw = reinterpret_cast<GModDXR::Renderer*>(pRenderer.get());
 	pRendererRaw->setWorldData(&worldData);
-	pRendererRaw->setCameraDefaults(Falcor::float3(camPos.x, camPos.z, camPos.y), Falcor::float3(camUp.x, camUp.z, camUp.y));
+	pRendererRaw->setCameraDefaults(gmodToGLMVec(camPos), gmodToGLMVec(camTarget));
+	pRendererRaw->setEntities(&meshes, &materials, &nodes, &textures);
 	pRendererRaw = nullptr;
 
 	// Create window config
@@ -213,6 +228,15 @@ void falcorThreadWrapper(const Vector camPos, const Vector camUp) {
 	mut.unlock();
 }
 
+void printLua(GarrysMod::Lua::ILuaBase* inst, const char text[])
+{
+	inst->PushSpecial(GarrysMod::Lua::SPECIAL_GLOB);
+	inst->GetField(-1, "print");
+	inst->PushString(text);
+	inst->Call(1, 0);
+	inst->Pop();
+}
+
 /*
 	Entrypoint for the application when loaded from GLua
 	
@@ -222,15 +246,116 @@ void falcorThreadWrapper(const Vector camPos, const Vector camUp) {
 	- Vector        Camera start location
 	- Vector        Camera up vector
 	- Vector        Sun direction
+	- table<table>  Table of entity data:
+	-    string         Name
+	-    table          Mesh data
+	-    string         Base colour texture
+	-    table          4x4 transformation matrix
+	-    Vector         Base colour
+	-    number         Alpha
 */
 LUA_FUNCTION(LaunchFalcor)
 {
 	if (TRACING) return 0;
 
+	auto meshes = std::vector<Falcor::TriangleMesh::SharedPtr>();
+	auto materials = std::vector<Falcor::Material::SharedPtr>();
+	auto nodes = std::vector<Falcor::SceneBuilder::Node>();
+	auto textures = std::vector<GModDXR::TextureList>();
+
+	for (size_t i = 0; i < LUA->ObjLen(6); i++) {
+		Falcor::TriangleMesh::SharedPtr pMesh = Falcor::TriangleMesh::create();
+
+		Falcor::Material::SharedPtr pMaterial = Falcor::Material::create("Entity");
+		pMaterial->setShadingModel(ShadingModelMetalRough);
+		pMaterial->setRoughness(1.f); // Placeholder
+		pMaterial->setMetallic(0.f);  // Placeholder
+
+		LUA->PushNumber(static_cast<double>(i + 1U));
+		LUA->GetTable(6);
+
+		LUA->GetField(7, "name");
+		pMesh->setName(LUA->GetString());
+		LUA->Pop();
+
+		LUA->GetField(7, "model");
+		for (size_t j = 0; j < LUA->ObjLen(8); j++) {
+			LUA->PushNumber(static_cast<double>(j + 1U));
+			LUA->GetTable(8);
+
+			LUA->GetField(-1, "pos");
+			Falcor::float3 pos = gmodToGLMVec(LUA->GetVector());
+			LUA->Pop();
+
+			LUA->GetField(-1, "normal");
+			Falcor::float3 normal = gmodToGLMVec(LUA->GetVector());
+			LUA->Pop();
+
+			LUA->GetField(-1, "u");
+			LUA->GetField(-2, "v");
+			Falcor::float2 uv = Falcor::float2(LUA->GetNumber(-2), LUA->GetNumber());
+			LUA->Pop(3);
+
+			pMesh->addVertex(pos, normal, uv);
+			if (j % 3 == 2) pMesh->addTriangle(j - 2U, j - 1U, j);
+		}
+		LUA->Pop();
+
+		LUA->GetField(7, "baseTexture");
+		LUA->GetField(7, "normalTexture");
+		textures.emplace_back(GModDXR::TextureList{ std::string(LUA->GetString(-2)), std::string(LUA->GetString(-1)) });
+		LUA->Pop(2);
+
+		LUA->GetField(7, "colour");
+		LUA->GetField(7, "alpha");
+		pMaterial->setBaseColor(Falcor::float4(LUA->GetVector(-2).x, LUA->GetVector(-2).y, LUA->GetVector(-2).z, LUA->GetNumber()));
+		LUA->Pop(2);
+
+		float ang[4][4];
+
+		LUA->GetField(7, "transform");
+		for (size_t row = 0; row < 4; row++) {
+			LUA->PushNumber(static_cast<double>(row + 1U));
+			LUA->GetTable(8);
+
+			for (size_t col = 0; col < 4; col++) {
+				LUA->PushNumber(static_cast<double>(col + 1U));
+				LUA->GetTable(9);
+
+				ang[row][col] = static_cast<float>(LUA->GetNumber());
+
+				LUA->Pop();
+			}
+
+			LUA->Pop();
+		}
+
+		glm::mat4 zToYUp = glm::mat4(
+			Falcor::float4(1, 0, 0, 0),
+			Falcor::float4(0, 0, -1, 0),
+			Falcor::float4(0, 1, 0, 0),
+			Falcor::float4(0, 0, 0, 1)
+		);
+
+		meshes.emplace_back(pMesh);
+		materials.emplace_back(pMaterial);
+		nodes.emplace_back(Falcor::SceneBuilder::Node{
+			"Entity",
+			(zToYUp * glm::mat4(
+				Falcor::float4(ang[0][0], ang[1][0], ang[2][0], ang[3][0]),
+				Falcor::float4(ang[0][1], ang[1][1], ang[2][1], ang[3][1]),
+				Falcor::float4(ang[0][2], ang[1][2], ang[2][2], ang[3][2]),
+				Falcor::float4(ang[0][3], ang[1][3], ang[2][3], ang[3][3])
+			)) * glm::transpose(zToYUp),
+			glm::identity<glm::mat4>()
+		});
+		LUA->Pop(2);
+	}
+
 	// Read camera details and world vert count
 	const size_t worldVertCount = LUA->GetNumber(2);
 	const Vector camPos = LUA->GetVector(3);
-	const Vector camUp = LUA->GetVector(4);
+	const Vector camTarget = LUA->GetVector(4);
 	const Vector sunDir = LUA->GetVector(5);
 	LUA->Pop(4);
 
@@ -241,12 +366,9 @@ LUA_FUNCTION(LaunchFalcor)
 		LUA->PushNumber(static_cast<double>(i + 1U));
 		LUA->GetTable(1);
 
-		// Get and pop the vector
-		const Vector vertPos = LUA->GetVector();
-		LUA->Pop();
-
 		// Add vertex position to world vetices vector as a float3
-		worldPositions.push_back(Falcor::float3(vertPos.x, vertPos.z, vertPos.y));
+		worldPositions.push_back(gmodToGLMVec(LUA->GetVector()));
+		LUA->Pop();
 	}
 	LUA->Pop();
 
@@ -254,11 +376,11 @@ LUA_FUNCTION(LaunchFalcor)
 	worldData.length = worldVertCount;
 	worldData.pPositions = worldPositions;
 	worldData.pNormals = GModDXR::computeBrushNormals(worldPositions.data(), worldVertCount);
-	worldData.sunDirection = Falcor::float3(sunDir.x, sunDir.z, sunDir.y);
+	worldData.sunDirection = gmodToGLMVec(sunDir);
 
 	// Run the sample
 	TRACING = true;
-	mainThread = std::thread(falcorThreadWrapper, camPos, camUp);
+	mainThread = std::thread(falcorThreadWrapper, camPos, camTarget, meshes, materials, nodes, textures);
 	mainThread.detach();
 	return 0;
 }
