@@ -4,7 +4,9 @@ Decided to use [NVIDIA Falcor](https://developer.nvidia.com/falcor) as a nice ab
 
 So far I have a functional method for loading and unloading the Falcor renderer using surface infos for map geometry and importing props using textures extracted from vpks and converted to pngs in the `Data/Overrides` folder (subfolder created manually), without blocking the gmod process and piping in the required data from the GLua side, and can edit the debug ray tracing slang shader file without restarting gmod by just closing the Falcor window and reloading the GLua script.  
 
-Fullbright scene showing textured entities:  
-![Example Render](https://github.com/100PXSquared/gmod-dxr/blob/master/Screenshots/textured%20entities.png)  
+I now also have an extremely basic iterative path tracer with a simple accumulation pass compute shader.  
+
+First decent render:  
+![Example Render](https://github.com/100PXSquared/gmod-dxr/blob/master/Screenshots/path%20tracing%20with%20accumulation%20(no%20tone%20mapping).png)  
 
 Map surfaces will be broken until I implement loading BSPs myself.
