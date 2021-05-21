@@ -45,6 +45,7 @@ namespace GModDXR
 		ComputeVars::SharedPtr pAccVars;
 		ComputeState::SharedPtr pAccState;
 		Texture::SharedPtr pAccBufferSum;
+		Texture::SharedPtr pAccBufferCorr;
 		uint accumulatingSince = 0;
 
 		//ComputeProgram::SharedPtr pTonemapProg;

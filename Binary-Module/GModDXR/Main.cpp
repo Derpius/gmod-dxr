@@ -158,6 +158,7 @@ namespace GModDXR
 
 		if (bReset) {
 			pContext->clearUAV(pAccBufferSum->getUAV().get(), float4(0.f));
+			pContext->clearUAV(pAccBufferCorr->getUAV().get(), float4(0.f));
 			accumulatingSince = sampleIndex;
 		}
 
@@ -172,6 +173,7 @@ namespace GModDXR
 		pAccVars["gInput"] = pRtOut;
 		pAccVars["gOutput"] = pAccOutput;
 		pAccVars["gSumBuffer"] = pAccBufferSum;
+		pAccVars["gCorrectionBuffer"] = pAccBufferCorr;
 
 		uint3 numGroups = div_round_up(uint3(resolution.x, resolution.y, 1u), pAccProg->getReflector()->getThreadGroupSize());
 		pAccState->setProgram(pAccProg);
@@ -215,8 +217,9 @@ namespace GModDXR
 			pCamera->setAspectRatio(aspectRatio);
 		}
 
-		pRtOut = Texture::create2D(width, height, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
-		pAccBufferSum = Texture::create2D(width, height, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+		pRtOut = Texture::create2D(width, height, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+		pAccBufferSum = Texture::create2D(width, height, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+		pAccBufferCorr = Texture::create2D(width, height, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
 	}
 
 	void Renderer::setWorldData(const WorldData* data)
