@@ -67,18 +67,20 @@ end
 local entities = {}
 for _, v in pairs(ents.FindByClass("prop_physics")) do
 	local meshes = util.GetModelMeshes(v:GetModel())
-	for i = 1, #meshes do
-		local subMat = Material(v:GetSubMaterial(i - 1) == "" and v:GetMaterials()[i] or v:GetSubMaterial(i - 1))
+	if meshes then
+		for i = 1, #meshes do
+			local subMat = Material(v:GetMaterial() ~= "" and v:GetMaterial() or (v:GetSubMaterial(i - 1) == "" and v:GetMaterials()[i] or v:GetSubMaterial(i - 1)))
 
-		entities[#entities + 1] = {
-			name = "Prop",
-			model = meshes[i].triangles,
-			colour = Vector(v:GetColor().r / 255, v:GetColor().g / 255, v:GetColor().b / 255),
-			alpha = v:GetColor().a / 255,
-			transform = GModMatrixToCPP(v:GetWorldTransformMatrix()),
-			baseTexture = subMat:GetString("$basetexture") and subMat:GetString("$basetexture")..".png" or "missingtexture.png",
-			normalTexture = subMat:GetString("$bumpmap") and subMat:GetString("$bumpmap")..".png" or ""
-		}
+			entities[#entities + 1] = {
+				name = "Prop",
+				model = meshes[i].triangles,
+				colour = Vector(v:GetColor().r / 255, v:GetColor().g / 255, v:GetColor().b / 255),
+				alpha = v:GetColor().a / 255,
+				transform = GModMatrixToCPP(v:GetWorldTransformMatrix()),
+				baseTexture = subMat:GetString("$basetexture") and subMat:GetString("$basetexture")..".png" or "missingtexture.png",
+				normalTexture = subMat:GetString("$bumpmap") and subMat:GetString("$bumpmap")..".png" or ""
+			}
+		end
 	end
 end
 
@@ -91,6 +93,6 @@ LaunchFalcor(
 	#worldVertices,
 	PLR:EyePos(),
 	PLR:EyePos() + PLR:EyeAngles():Forward(),
-	util.GetSunInfo().direction,
+	-util.GetSunInfo().direction,
 	entities
 )
