@@ -80,15 +80,31 @@ namespace GModDXR
 		pCamera->setTarget(cameraStartTarget);
 
 		RtProgram::Desc rtProgDesc;
-		rtProgDesc.addShaderLibrary(std::string(_SHADER_DIR) + "debug.rt.slang").setRayGen("rayGen");
+		rtProgDesc.addShaderLibrary(std::string(_SHADER_DIR) + "Pathtrace.rt.slang").setRayGen("rayGen");
 		rtProgDesc.addHitGroup(0, "primaryClosestHit", "primaryAnyHit").addMiss(0, "primaryMiss");
 		rtProgDesc.addHitGroup(1, "", "shadowAnyHit").addMiss(1, "shadowMiss");
+		rtProgDesc.addHitGroup(2, "indirectClosestHit", "indirectAnyHit").addMiss(2, "indirectMiss");
 		rtProgDesc.addDefines(pScene->getSceneDefines());
-		rtProgDesc.setMaxTraceRecursionDepth(3); // 1 for calling TraceRay from RayGen, 1 for calling it from the primary-ray ClosestHitShader for reflections, 1 for reflection ray tracing a shadow ray
+		rtProgDesc.setMaxTraceRecursionDepth(3);
 
-		pRaytraceProgram = RtProgram::create(rtProgDesc);
+		pSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
+
+		pRaytraceProgram = RtProgram::create(rtProgDesc, 80U);
+		pRaytraceProgram->addDefines(pSampleGenerator->getDefines());
+
 		pRtVars = RtProgramVars::create(pRaytraceProgram, pScene);
+
+		auto pGlobalVars = pRtVars->getRootVar();
+		bool success = pSampleGenerator->setShaderData(pGlobalVars);
+		if (!success) logError("Failed to bind sample generator");
+
 		pRaytraceProgram->setScene(pScene);
+
+		pAccProg = ComputeProgram::createFromFile(std::string(_SHADER_DIR) + "Accumulate.cs.slang", "main");
+		pAccVars = ComputeVars::create(pAccProg->getReflector());
+		pAccState = ComputeState::create();
+
+		//pTonemapPass = ComputeProgram::createFromFile(std::string(_SHADER_DIR) + "Tonemap.cs.slang", "main");
 	}
 
 	void Renderer::onLoad(RenderContext* pRenderContext)
@@ -96,6 +112,9 @@ namespace GModDXR
 		if (!gpDevice->isFeatureSupported(Device::SupportedFeatures::Raytracing)) {
 			logFatal("Device does not support raytracing!");
 		}
+
+		Sampler::Desc samplerDesc;
+		samplerDesc.setFilterMode(Sampler::Filter::Point, Sampler::Filter::Point, Sampler::Filter::Point);
 
 		loadScene(gpFramework->getTargetFbo().get());
 	}
@@ -108,7 +127,7 @@ namespace GModDXR
 		cb["viewportDims"] = float2(pTargetFbo->getWidth(), pTargetFbo->getHeight());
 		float fovY = focalLengthToFovY(pCamera->getFocalLength(), Camera::kDefaultFrameHeight);
 		cb["tanHalfFovY"] = std::tan(fovY * 0.5f);
-		cb["sampleIndex"] = sampleIndex++;
+		cb["sampleIndex"] = sampleIndex;
 		cb["useDOF"] = useDOF;
 		cb["kClearColour"] = kClearColour;
 		pRtVars->getRayGenVars()["gOutput"] = pRtOut;
@@ -119,9 +138,48 @@ namespace GModDXR
 		PROFILE("renderRT");
 		setPerFrameVars(pTargetFbo);
 
+		const uint2 resolution = uint2(pTargetFbo->getWidth(), pTargetFbo->getHeight());
+
 		pContext->clearUAV(pRtOut->getUAV().get(), kClearColour);
-		pScene->raytrace(pContext, pRaytraceProgram.get(), pRtVars, uint3(pTargetFbo->getWidth(), pTargetFbo->getHeight(), 1));
-		pContext->blit(pRtOut->getSRV(), pTargetFbo->getRenderTargetView(0));
+		pScene->raytrace(pContext, pRaytraceProgram.get(), pRtVars, uint3(resolution, 1));
+
+		// Accumulation pass (temporal denoising)
+		bool bReset = false;
+
+		// Reset code taken from Falcor's accumulation render pass (designed for use in mogwai)
+		auto sceneUpdates = pScene->getUpdates();
+		if ((sceneUpdates & ~Scene::UpdateFlags::CameraPropertiesChanged) != Scene::UpdateFlags::None) {
+			bReset = true;
+		} else if (is_set(sceneUpdates, Scene::UpdateFlags::CameraPropertiesChanged)) {
+			auto excluded = Camera::Changes::Jitter | Camera::Changes::History;
+			auto cameraChanges = pScene->getCamera()->getChanges();
+			if ((cameraChanges & ~excluded) != Camera::Changes::None) bReset = true;
+		}
+
+		if (bReset) {
+			pContext->clearUAV(pAccBufferSum->getUAV().get(), float4(0.f));
+			accumulatingSince = sampleIndex;
+		}
+
+		Texture::SharedPtr pAccOutput = Texture::create2D(
+			resolution.x, resolution.y,
+			ResourceFormat::RGBA16Float, 1, 1, nullptr,
+			ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
+		);
+
+		pAccVars["PerFrameCB"]["gSamples"] = sampleIndex - accumulatingSince;
+		pAccVars["PerFrameCB"]["gResolution"] = resolution;
+		pAccVars["gInput"] = pRtOut;
+		pAccVars["gOutput"] = pAccOutput;
+		pAccVars["gSumBuffer"] = pAccBufferSum;
+
+		uint3 numGroups = div_round_up(uint3(resolution.x, resolution.y, 1u), pAccProg->getReflector()->getThreadGroupSize());
+		pAccState->setProgram(pAccProg);
+		pContext->dispatch(pAccState.get(), pAccVars.get(), numGroups);
+		pContext->blit(pAccOutput->getSRV(), pTargetFbo->getRenderTargetView(0));
+
+		// Increment sample index
+		sampleIndex++;
 	}
 
 	void Renderer::onFrameRender(RenderContext* pRenderContext, const Fbo::SharedPtr& pTargetFbo)
@@ -158,6 +216,7 @@ namespace GModDXR
 		}
 
 		pRtOut = Texture::create2D(width, height, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+		pAccBufferSum = Texture::create2D(width, height, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
 	}
 
 	void Renderer::setWorldData(const WorldData* data)

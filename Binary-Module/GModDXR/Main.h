@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Falcor.h"
+#include "Utils/Sampling/SampleGenerator.h"
 
 namespace GModDXR
 {
@@ -38,7 +39,15 @@ namespace GModDXR
 		SceneBuilder::SharedPtr pBuilder;
 		Scene::SharedPtr pScene;
 
-		RtProgram::SharedPtr pRaytraceProgram = nullptr;
+		RtProgram::SharedPtr pRaytraceProgram;
+
+		ComputeProgram::SharedPtr pAccProg;
+		ComputeVars::SharedPtr pAccVars;
+		ComputeState::SharedPtr pAccState;
+		Texture::SharedPtr pAccBufferSum;
+		uint accumulatingSince = 0;
+
+		//ComputeProgram::SharedPtr pTonemapProg;
 
 		Camera::SharedPtr pCamera;
 		float3 cameraStartPos;
@@ -48,7 +57,8 @@ namespace GModDXR
 		RtProgramVars::SharedPtr pRtVars;
 		Texture::SharedPtr pRtOut;
 
-		uint32_t sampleIndex = 0xdeadbeef;
+		uint sampleIndex = 0;
+		SampleGenerator::SharedPtr pSampleGenerator;
 
 		const WorldData* pWorldData;
 
