@@ -6,7 +6,6 @@ So far I have a functional method for loading and unloading the Falcor renderer 
 
 I now also have an extremely basic iterative path tracer with a simple accumulation pass compute shader.  
 
-First decent render:  
-![Example Render](https://github.com/100PXSquared/gmod-dxr/blob/master/Screenshots/path%20tracing%20with%20accumulation%20(no%20tone%20mapping).png)  
+![Example Render](https://github.com/100PXSquared/gmod-dxr/blob/master/Screenshots/fixed%20accumulation.png)  
 
 Map surfaces will be broken until I implement loading BSPs myself.
