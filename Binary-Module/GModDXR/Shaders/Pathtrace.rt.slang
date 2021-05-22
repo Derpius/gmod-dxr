@@ -1,5 +1,7 @@
 #include "Utils/Math/MathConstants.slangh"
 
+#define _USE_LEGACY_SHADING_CODE 0
+
 import Scene.Shading;
 import Scene.Raytracing;
 
@@ -97,13 +99,18 @@ float3 evalDirectAnalytic(const ShadingData sd, float3 rayOrigin, inout SampleGe
 
 void sampleIndirect(const ShadingData sd, float3 origin, inout IndirectRayData rayData)
 {
-	float pdf = 0.f;
-	float3 wi = sample_cosine_hemisphere_concentric(sampleNext2D(rayData.sg), pdf);
-	wi = fromLocal(wi, sd);
+	// Sample BSDF
+	BSDFSample result;
+	const bool valid = sampleBSDF(sd, rayData.sg, result);
+	if (valid == false) {
+		rayData.terminated = true;
+		return;
+	}
 
+	// Update ray data object
 	rayData.origin = origin;
-	rayData.direction = wi;
-	rayData.throughput *= pdf > 0.f ? evalBSDFCosine(sd, wi) / pdf : float3(0);
+	rayData.direction = result.wi;
+	rayData.throughput *= result.weight;
 }
 
 [shader("miss")]
@@ -185,6 +192,20 @@ void primaryMiss(inout PrimaryRayData hitData)
 	hitData.hitT = -1;
 }
 
+[shader("anyhit")]
+void primaryAnyHit(
+	uniform HitShaderParams hitParams,
+	inout PrimaryRayData rayData,
+	BuiltInTriangleIntersectionAttributes attribs
+) {
+	// Alpha test for non-opaque geometry. (will need to remove when I've implemented refraction)
+	VertexData v = getVertexData(hitParams, PrimitiveIndex(), attribs);
+	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
+	if (alphaTest(v, gScene.materials[materialID], gScene.materialResources[materialID], 0.f)) {
+		IgnoreHit();
+	}
+}
+
 [shader("closesthit")]
 void primaryClosestHit(
 	uniform HitShaderParams hitParams,
@@ -226,6 +247,7 @@ void primaryClosestHit(
 
 	sampleIndirect(sd, origin, indRayData);
 
+	[loop]
 	for (uint depth = 0; depth < 3 && !indRayData.terminated; depth ++) {
 		// Trace indirect ray
 		indirectRay.Origin = indRayData.origin;
@@ -237,20 +259,6 @@ void primaryClosestHit(
 	hitData.colour.rgb = colour;
 	hitData.colour.a = 1;
 	hitData.hitT = hitT;
-}
-
-[shader("anyhit")]
-void primaryAnyHit(
-	uniform HitShaderParams hitParams,
-	inout PrimaryRayData rayData,
-	BuiltInTriangleIntersectionAttributes attribs
-) {
-	// Alpha test for non-opaque geometry. (will need to remove when I've implemented refraction)
-	VertexData v = getVertexData(hitParams, PrimitiveIndex(), attribs);
-	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
-	if (alphaTest(v, gScene.materials[materialID], gScene.materialResources[materialID], 0.f)) {
-		IgnoreHit();
-	}
 }
 
 [shader("raygeneration")]
