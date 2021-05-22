@@ -183,6 +183,14 @@ void indirectClosestHit(
 
 	// Sample next ray
 	sampleIndirect(sd, origin, rayData);
+
+	// Russian Roulette
+	float p = max(rayData.throughput.x, max(rayData.throughput.y, rayData.throughput.z));
+	if (sampleNext1D(rayData.sg) > p) {
+		rayData.terminated = true;
+	} else {
+		rayData.throughput *= 1 / p;
+	}
 }
 
 [shader("miss")]
@@ -248,11 +256,11 @@ void primaryClosestHit(
 	sampleIndirect(sd, origin, indRayData);
 
 	[loop]
-	for (uint depth = 0; depth < 3 && !indRayData.terminated; depth ++) {
+	for (uint depth = 0; depth < 3 && !indRayData.terminated; depth++) {
 		// Trace indirect ray
 		indirectRay.Origin = indRayData.origin;
 		indirectRay.Direction = indRayData.direction;
-		TraceRay(gRtScene, 0, 0xFF, 2, hitProgramCount, 2, indirectRay, indRayData);
+		TraceRay(gRtScene, RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, 0xFF, 2, hitProgramCount, 2, indirectRay, indRayData);
 	}
 	colour += indRayData.colour;
 
@@ -279,6 +287,6 @@ void rayGen(
 
 	PrimaryRayData hitData;
 	hitData.launchIndex = launchIndex;
-	TraceRay(gRtScene, 0, 0xFF, 0, hitProgramCount, 0, ray, hitData);
+	TraceRay(gRtScene, RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, 0xFF, 0, hitProgramCount, 0, ray, hitData);
 	gOutput[launchIndex.xy] = hitData.colour;
 }
