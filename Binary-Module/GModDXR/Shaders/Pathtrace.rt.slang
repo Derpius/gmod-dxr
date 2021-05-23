@@ -53,65 +53,65 @@ struct ShadowRayData
 
 // evalMIS is a simplified version of the one found in PathTracerHelpers.slang
 /** Evaluates the currently configured heuristic for multiple importance sampling (MIS).
-    This version assumes one sample is taken from each of the sampling strategies.
-    \param[in] p0 Pdf for the first sampling strategy.
-    \param[in] p1 Pdf for the second sampling strategy.
-    \return Weight for the contribution from the first strategy (p0).
+	This version assumes one sample is taken from each of the sampling strategies.
+	\param[in] p0 Pdf for the first sampling strategy.
+	\param[in] p1 Pdf for the second sampling strategy.
+	\return Weight for the contribution from the first strategy (p0).
 */
 float evalMIS(float p0, float p1)
 {
 	float p02 = p0 * p0;
-    return p02 / (p02 + p1 * p1);
+	return p02 / (p02 + p1 * p1);
 }
 
 // traceShadowRay and evalDirectAnalytic taken from MinimalPathTracer.rt.slang
 /** Traces a shadow ray towards a light source.
-    \param[in] origin Ray origin for the shadow ray.
-    \param[in] dir Direction from shading point towards the light source (normalized).
-    \param[in] distance Distance to the light source.
-    \return True if light is visible, false otherwise.
+	\param[in] origin Ray origin for the shadow ray.
+	\param[in] dir Direction from shading point towards the light source (normalized).
+	\param[in] distance Distance to the light source.
+	\return True if light is visible, false otherwise.
 */
 bool traceShadowRay(float3 origin, float3 dir, float distance)
 {
-    RayDesc ray;
-    ray.Origin = origin;
-    ray.Direction = dir;
-    ray.TMin = 0.f;
-    ray.TMax = distance;
+	RayDesc ray;
+	ray.Origin = origin;
+	ray.Direction = dir;
+	ray.TMin = 0.f;
+	ray.TMax = distance;
 
-    ShadowRayData rayData;
-    rayData.visible = false;    // Set to true by miss shader if ray is not terminated before
-    TraceRay(gRtScene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, hitProgramCount, 1 /* missIdx */, ray, rayData);
+	ShadowRayData rayData;
+	rayData.visible = false;    // Set to true by miss shader if ray is not terminated before
+	TraceRay(gRtScene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, hitProgramCount, 1 /* missIdx */, ray, rayData);
 
-    return rayData.visible;
+	return rayData.visible;
 }
 
 /** Evaluates the direct illumination from analytic lights.
-    This function samples Falcor's light list uniformly with one shadow ray.
-    \param[in] sd Shading data.
-    \param[in] rayOrigin Ray origin for the shadow ray.
-    \param[in] sg SampleGenerator object.
-    \return Outgoing radiance in view direction.
+	This function samples Falcor's light list uniformly with one shadow ray.
+	\param[in] sd Shading data.
+	\param[in] rayOrigin Ray origin for the shadow ray.
+	\param[in] sg SampleGenerator object.
+	\return Outgoing radiance in view direction.
 */
 float3 evalDirectAnalytic(const ShadingData sd, float3 rayOrigin, inout SampleGenerator sg)
 {
-    const uint lightCount = gScene.getLightCount();
-    if (lightCount == 0) return float3(0);
+	const uint lightCount = gScene.getLightCount();
+	if (lightCount == 0) return float3(0);
 
-    // Pick one of the analytic light sources randomly with equal probability.
-    const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
-    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
+	// Pick one of the analytic light sources randomly with equal probability.
+	const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+	float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
 
-    // Sample local light source.
-    AnalyticLightSample ls;
-    bool valid = sampleLight(rayOrigin, gScene.getLight(lightIndex), sg, ls);
+	// Sample local light source.
+	AnalyticLightSample ls;
+	bool valid = sampleLight(rayOrigin, gScene.getLight(lightIndex), sg, ls);
 
-    // Reject sample if lower hemisphere.
-    if (!valid || dot(ls.dir, sd.N) <= kMinCosTheta) return float3(0);
+	// Reject sample if lower hemisphere.
+	if (!valid || dot(ls.dir, sd.N) <= kMinCosTheta) return float3(0);
 
-    // Test visibility by tracing a shadow ray.
-    bool V = traceShadowRay(rayOrigin, ls.dir, ls.distance);
-    return V ? evalBSDFCosine(sd, ls.dir) * ls.Li * invPdf : float3(0);
+	// Test visibility by tracing a shadow ray.
+	bool V = traceShadowRay(rayOrigin, ls.dir, ls.distance);
+	return V ? evalBSDFCosine(sd, ls.dir) * ls.Li * invPdf : float3(0);
 }
 
 void sampleIndirect(const ShadingData sd, float3 origin, inout IndirectRayData rayData)
