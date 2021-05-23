@@ -12,6 +12,7 @@ import Utils.Sampling.SampleGenerator;
 
 import Experimental.Scene.Material.MaterialShading;
 import Experimental.Scene.Lights.LightHelpers;
+import Experimental.Scene.Lights.EmissiveLightSampler;
 
 #define BIAS 0.01f
 
@@ -23,6 +24,8 @@ cbuffer PerFrameCB
 	uint sampleIndex;
 	bool useDOF;
 	float4 kClearColour;
+	bool bSampleEmissives;
+	EmissiveLightSampler emissiveSampler;
 };
 
 struct PrimaryRayData
@@ -40,12 +43,26 @@ struct IndirectRayData
 	float3 direction;
 	float3 throughput;
 	SampleGenerator sg;
+	float pdfLast;
 }
 
 struct ShadowRayData
 {
 	bool visible;
 };
+
+// evalMIS is a simplified version of the one found in PathTracerHelpers.slang
+/** Evaluates the currently configured heuristic for multiple importance sampling (MIS).
+    This version assumes one sample is taken from each of the sampling strategies.
+    \param[in] p0 Pdf for the first sampling strategy.
+    \param[in] p1 Pdf for the second sampling strategy.
+    \return Weight for the contribution from the first strategy (p0).
+*/
+float evalMIS(float p0, float p1)
+{
+	float p02 = p0 * p0;
+    return p02 / (p02 + p1 * p1);
+}
 
 // traceShadowRay and evalDirectAnalytic taken from MinimalPathTracer.rt.slang
 /** Traces a shadow ray towards a light source.
@@ -102,12 +119,13 @@ void sampleIndirect(const ShadingData sd, float3 origin, inout IndirectRayData r
 	// Sample BSDF
 	BSDFSample result;
 	const bool valid = sampleBSDF(sd, rayData.sg, result);
-	if (valid == false) {
+	if (!valid || result.pdf == 0.f) {
 		rayData.terminated = true;
 		return;
 	}
 
 	// Update ray data object
+	rayData.pdfLast = result.pdf;
 	rayData.origin = origin;
 	rayData.direction = result.wi;
 	rayData.throughput *= result.weight;
@@ -176,10 +194,26 @@ void indirectClosestHit(
 	float3 origin = sd.computeNewRayOrigin();
 
 	// Add emissive contribution
-	rayData.colour += rayData.throughput * sd.emissive;
+	TriangleHit hit;
+	hit.triangleIndex = gScene.lightCollection.getTriangleIndex(hitParams.getGlobalHitID(), triangleIndex);
+	hit.posW = sd.posW;
+	hit.normalW = sd.frontFacing ? sd.faceN : -sd.faceN;
+
+	rayData.colour += rayData.throughput * sd.emissive * evalMIS(rayData.pdfLast, emissiveSampler.evalPdf(origin, sd.N, true, hit) / 2.f);
 
 	// Add direct contribution
-	rayData.colour += rayData.throughput * evalDirectAnalytic(sd, origin, rayData.sg);
+	if (bSampleEmissives && sampleNext1D(rayData.sg) < 0.5f) {
+		TriangleLightSample lightSample;
+		bool valid = emissiveSampler.sampleLight(origin, sd.N, true, rayData.sg, lightSample);
+		if (valid) {
+			if (traceShadowRay(lightSample.posW + lightSample.normalW, lightSample.dir, lightSample.distance)) {
+				float3 emitColour = lightSample.Le * evalMIS(lightSample.pdf / 2.f, evalPdfBSDF(sd, lightSample.dir)) / lightSample.pdf;
+				rayData.colour += rayData.throughput * evalBSDFCosine(sd, lightSample.dir) * emitColour;
+			}
+		}
+	} else {
+		rayData.colour += rayData.throughput * evalDirectAnalytic(sd, origin, rayData.sg);
+	}
 
 	// Sample next ray
 	sampleIndirect(sd, origin, rayData);
@@ -256,7 +290,7 @@ void primaryClosestHit(
 	sampleIndirect(sd, origin, indRayData);
 
 	[loop]
-	for (uint depth = 0; depth < 3 && !indRayData.terminated; depth++) {
+	for (uint depth = 0; depth < 5 && !indRayData.terminated; depth++) {
 		// Trace indirect ray
 		indirectRay.Origin = indRayData.origin;
 		indirectRay.Direction = indRayData.direction;

@@ -2,6 +2,7 @@
 
 #include "Falcor.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include "Experimental/Scene/Lights/EmissivePowerSampler.h"
 
 namespace GModDXR
 {
@@ -60,6 +61,7 @@ namespace GModDXR
 
 		uint sampleIndex = 0;
 		SampleGenerator::SharedPtr pSampleGenerator;
+		EmissiveLightSampler::SharedPtr pEmissiveSampler;
 
 		const WorldData* pWorldData;
 
@@ -73,6 +75,6 @@ namespace GModDXR
 
 		void setPerFrameVars(const Fbo* pTargetFbo);
 		void renderRT(RenderContext* pContext, const Fbo* pTargetFbo);
-		void loadScene(const Fbo* pTargetFbo);
+		void loadScene(RenderContext* pRenderContext, const Fbo* pTargetFbo);
 	};
 }

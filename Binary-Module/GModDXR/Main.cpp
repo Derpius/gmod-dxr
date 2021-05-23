@@ -17,7 +17,7 @@ namespace GModDXR
 		pScene->renderUI(w);
 	}
 
-	void Renderer::loadScene(const Fbo* pTargetFbo)
+	void Renderer::loadScene(RenderContext* pRenderContext, const Fbo* pTargetFbo)
 	{
 		// Create the scene
 		pBuilder = SceneBuilder::create();
@@ -88,9 +88,11 @@ namespace GModDXR
 		rtProgDesc.setMaxTraceRecursionDepth(3);
 
 		pSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
+		pEmissiveSampler = EmissivePowerSampler::create(pRenderContext, pScene);
 
 		pRaytraceProgram = RtProgram::create(rtProgDesc, 80U);
 		pRaytraceProgram->addDefines(pSampleGenerator->getDefines());
+		pRaytraceProgram->addDefines(pEmissiveSampler->getDefines());
 
 		pRtVars = RtProgramVars::create(pRaytraceProgram, pScene);
 
@@ -113,10 +115,7 @@ namespace GModDXR
 			logFatal("Device does not support raytracing!");
 		}
 
-		Sampler::Desc samplerDesc;
-		samplerDesc.setFilterMode(Sampler::Filter::Point, Sampler::Filter::Point, Sampler::Filter::Point);
-
-		loadScene(gpFramework->getTargetFbo().get());
+		loadScene(pRenderContext, gpFramework->getTargetFbo().get());
 	}
 
 	void Renderer::setPerFrameVars(const Fbo* pTargetFbo)
@@ -130,6 +129,7 @@ namespace GModDXR
 		cb["sampleIndex"] = sampleIndex;
 		cb["useDOF"] = useDOF;
 		cb["kClearColour"] = kClearColour;
+		cb["bSampleEmissives"] = pScene->useEmissiveLights();
 		pRtVars->getRayGenVars()["gOutput"] = pRtOut;
 	}
 
@@ -190,6 +190,14 @@ namespace GModDXR
 
 		if (pScene) {
 			pScene->update(pRenderContext, gpFramework->getGlobalClock().getTime());
+
+			if (pScene->useEmissiveLights()) {
+				pScene->getLightCollection(pRenderContext);
+				pEmissiveSampler->update(pRenderContext);
+				bool success = pEmissiveSampler->setShaderData(pRtVars["PerFrameCB"]["gEmissiveSampler"]);
+				if (!success) logError("Failed to bind emissive sampler");
+			}
+
 			renderRT(pRenderContext, pTargetFbo.get());
 		}
 
