@@ -14,7 +14,7 @@ import Experimental.Scene.Material.MaterialShading;
 import Experimental.Scene.Lights.LightHelpers;
 import Experimental.Scene.Lights.EmissiveLightSampler;
 
-#define BIAS 0.01f
+#define MIN_COS_THETA 0.f
 
 cbuffer PerFrameCB
 {
@@ -100,18 +100,46 @@ float3 evalDirectAnalytic(const ShadingData sd, float3 rayOrigin, inout SampleGe
 
 	// Pick one of the analytic light sources randomly with equal probability.
 	const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
-	float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
 
 	// Sample local light source.
 	AnalyticLightSample ls;
 	bool valid = sampleLight(rayOrigin, gScene.getLight(lightIndex), sg, ls);
 
 	// Reject sample if lower hemisphere.
-	if (!valid || dot(ls.dir, sd.N) <= kMinCosTheta) return float3(0);
+	if (!valid || dot(ls.dir, sd.N) <= MIN_COS_THETA) return float3(0);
 
 	// Test visibility by tracing a shadow ray.
 	bool V = traceShadowRay(rayOrigin, ls.dir, ls.distance);
-	return V ? evalBSDFCosine(sd, ls.dir) * ls.Li * invPdf : float3(0);
+	return V ? evalBSDFCosine(sd, ls.dir) * ls.Li * lightCount : float3(0);
+}
+
+void evalDirect(inout IndirectRayData rayData, const ShadingData sd, float3 origin, uint hitId, uint triId)
+{
+	// Add emissive contribution
+	if (any(sd.emissive > 0.f)) {
+		TriangleHit hit;
+		hit.triangleIndex = gScene.lightCollection.getTriangleIndex(hitId, triId);
+		hit.posW = sd.posW;
+		hit.normalW = sd.frontFacing ? sd.faceN : -sd.faceN;
+
+		rayData.colour += rayData.throughput * sd.emissive * evalMIS(rayData.pdfLast, emissiveSampler.evalPdf(origin, sd.N, true, hit) / 2.f);
+	}
+
+	// Add direct contribution
+	if (bSampleEmissives && sampleNext1D(rayData.sg) < 0.5f) {
+		TriangleLightSample lightSample;
+
+		bool valid = emissiveSampler.sampleLight(origin, sd.N, true, rayData.sg, lightSample);
+		if (!valid || dot(sd.N, lightSample.dir) <= MIN_COS_THETA) return;
+
+		bool visible = traceShadowRay(lightSample.posW + lightSample.normalW, lightSample.dir, lightSample.distance);
+		if (!visible) return;
+
+		float3 emitColour = lightSample.Le * evalMIS(lightSample.pdf / 2.f, evalPdfBSDF(sd, lightSample.dir)) / lightSample.pdf;
+		rayData.colour += rayData.throughput * evalBSDFCosine(sd, lightSample.dir) * emitColour;
+	} else {
+		rayData.colour += rayData.throughput * evalDirectAnalytic(sd, origin, rayData.sg);
+	}
 }
 
 void sampleIndirect(const ShadingData sd, float3 origin, inout IndirectRayData rayData)
@@ -184,7 +212,10 @@ void indirectClosestHit(
 
 	// prepare the shading data
 	VertexData v = getVertexData(hitParams, triangleIndex, attribs);
-	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
+	
+	uint hitIndex = hitParams.getGlobalHitID();
+	uint materialID = gScene.getMaterialID(hitIndex);
+
 	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
 	sd.diffuse = sd.diffuse * gScene.materials[materialID].baseColor.rgb;
 	sd.opacity = sd.opacity * gScene.materials[materialID].baseColor.a;
@@ -193,27 +224,8 @@ void indirectClosestHit(
 	// Calc biased origin
 	float3 origin = sd.computeNewRayOrigin();
 
-	// Add emissive contribution
-	TriangleHit hit;
-	hit.triangleIndex = gScene.lightCollection.getTriangleIndex(hitParams.getGlobalHitID(), triangleIndex);
-	hit.posW = sd.posW;
-	hit.normalW = sd.frontFacing ? sd.faceN : -sd.faceN;
-
-	rayData.colour += rayData.throughput * sd.emissive * evalMIS(rayData.pdfLast, emissiveSampler.evalPdf(origin, sd.N, true, hit) / 2.f);
-
-	// Add direct contribution
-	if (bSampleEmissives && sampleNext1D(rayData.sg) < 0.5f) {
-		TriangleLightSample lightSample;
-		bool valid = emissiveSampler.sampleLight(origin, sd.N, true, rayData.sg, lightSample);
-		if (valid) {
-			if (traceShadowRay(lightSample.posW + lightSample.normalW, lightSample.dir, lightSample.distance)) {
-				float3 emitColour = lightSample.Le * evalMIS(lightSample.pdf / 2.f, evalPdfBSDF(sd, lightSample.dir)) / lightSample.pdf;
-				rayData.colour += rayData.throughput * evalBSDFCosine(sd, lightSample.dir) * emitColour;
-			}
-		}
-	} else {
-		rayData.colour += rayData.throughput * evalDirectAnalytic(sd, origin, rayData.sg);
-	}
+	// Evaluate direct lighting
+	evalDirect(rayData, sd, origin, hitIndex, triangleIndex);
 
 	// Sample next ray
 	sampleIndirect(sd, origin, rayData);
@@ -259,9 +271,13 @@ void primaryClosestHit(
 	float hitT = RayTCurrent();
 	uint triangleIndex = PrimitiveIndex();
 
-	// prepare the shading data
+	// Get vertext data, hit index, and material ID
 	VertexData v = getVertexData(hitParams, triangleIndex, attribs);
-	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
+
+	uint hitIndex = hitParams.getGlobalHitID();
+	uint materialID = gScene.getMaterialID(hitIndex);
+	
+	// Prepare shading data
 	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
 	sd.diffuse = sd.diffuse * gScene.materials[materialID].baseColor.rgb;
 	sd.opacity = sd.opacity * gScene.materials[materialID].baseColor.a;
@@ -273,22 +289,27 @@ void primaryClosestHit(
 	// Calculate biased hit point
 	float3 origin = sd.computeNewRayOrigin();
 
-	// Output colour
-	float3 colour = sd.emissive + evalDirectAnalytic(sd, origin, generator);
-
-	// Indirect lighting
+	// Lighting
+	// Prepare reused ray
 	RayDesc indirectRay;
 	indirectRay.TMin = 0.f;
 	indirectRay.TMax = FLT_MAX;
 
+	// Prepare ray payload
 	IndirectRayData indRayData;
 	indRayData.colour = float3(0);
 	indRayData.throughput = float3(1);
 	indRayData.sg = generator;
 	indRayData.terminated = false;
+	indRayData.pdfLast = 1.f;
 
+	// Eval direct lighting at primary ray hit
+	evalDirect(indRayData, sd, origin, hitIndex, triangleIndex);
+
+	// Sample first indirect ray
 	sampleIndirect(sd, origin, indRayData);
 
+	// Scatter
 	[loop]
 	for (uint depth = 0; depth < 5 && !indRayData.terminated; depth++) {
 		// Trace indirect ray
@@ -296,9 +317,9 @@ void primaryClosestHit(
 		indirectRay.Direction = indRayData.direction;
 		TraceRay(gRtScene, RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, 0xFF, 2, hitProgramCount, 2, indirectRay, indRayData);
 	}
-	colour += indRayData.colour;
 
-	hitData.colour.rgb = colour;
+	// Assign colour to primary ray payload
+	hitData.colour.rgb = indRayData.colour;
 	hitData.colour.a = 1;
 	hitData.hitT = hitT;
 }
