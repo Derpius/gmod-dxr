@@ -40,6 +40,8 @@ namespace GModDXR
 		SceneBuilder::SharedPtr pBuilder;
 		Scene::SharedPtr pScene;
 
+		Sampler::SharedPtr pLinearSampler;
+
 		RtProgram::SharedPtr pRaytraceProgram;
 
 		ComputeProgram::SharedPtr pAccProg;
@@ -48,8 +50,10 @@ namespace GModDXR
 		Texture::SharedPtr pAccBufferSum;
 		Texture::SharedPtr pAccBufferCorr;
 		uint accumulatingSince = 0;
+		bool resetAccumulation = false;
 
-		//ComputeProgram::SharedPtr pTonemapProg;
+		FullScreenPass::SharedPtr pLuminancePass;
+		FullScreenPass::SharedPtr pTonemapPass;
 
 		Camera::SharedPtr pCamera;
 		float3 cameraStartPos;
@@ -72,6 +76,12 @@ namespace GModDXR
 
 		float zNear = 0.01f;
 		float zFar = 100.f;
+		float exposureCompensation = 0.f;
+
+		bool useWhiteBalance = false;
+		float whitePoint = 6500.f;
+		float3 currentWhite = float3(0.f);
+		float3x3 colourTransform;
 
 		void setPerFrameVars(const Fbo* pTargetFbo);
 		void renderRT(RenderContext* pContext, const Fbo* pTargetFbo);

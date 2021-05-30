@@ -1,20 +1,33 @@
 #define FALCOR_D3D12
 
 #include "Main.h"
+#include <Utils/Color/ColorUtils.h>
 #include "GarrysMod/Lua/Interface.h"
 
 namespace GModDXR
 {
-	static const float4 kClearColour(0.50f, 0.48f, 0.45f, 1);
+	static const float4 kClearColour(0.361f, 0.361f, 0.361f, 1);
 	void Renderer::onGuiRender(Gui* pGui)
 	{
 		Gui::Window w(pGui, "GModDXR Settings", { 300, 400 }, { 10, 80 });
 
-		w.checkbox("Use Depth of Field", useDOF);
-		if (w.var("Z Near", zNear, 0.f, std::numeric_limits<float>::max(), 0.1f) || w.var("Z Far", zFar, 0.1f, std::numeric_limits<float>::max(), 0.1f, true))
+		if (w.checkbox("Use Depth of Field", useDOF)) resetAccumulation = true;
+		if (w.var("Z Near", zNear, 0.f, std::numeric_limits<float>::max(), 0.1f) || w.var("Z Far", zFar, 0.1f, std::numeric_limits<float>::max(), 0.1f, true)) {
 			pScene->getCamera()->setDepthRange(zNear, zFar);
+			resetAccumulation = true;
+		}
 
-		pScene->renderUI(w);
+		if (auto tonemapGroup = w.group("Tonemapping", true)) {
+			tonemapGroup.var("Exposure Compensation", exposureCompensation, -12.f, 12.f, 0.1f, false, "%.1f");
+			tonemapGroup.checkbox("Use White Balance", useWhiteBalance, false);
+			tonemapGroup.var("White Point (in kelvin)", whitePoint, 1905.f, 25000.f, 5.f, false, "%.0f");
+
+			float3 white = currentWhite;
+			white = white / std::max(std::max(white.r, white.g), white.b);
+			tonemapGroup.rgbColor("", white, false);
+		}
+
+		if (auto sceneGroup = w.group("Scene", true)) pScene->renderUI(w);
 	}
 
 	void Renderer::loadScene(RenderContext* pRenderContext, const Fbo* pTargetFbo)
@@ -79,6 +92,12 @@ namespace GModDXR
 		pCamera->setPosition(cameraStartPos);
 		pCamera->setTarget(cameraStartTarget);
 
+		// Create texture sampler(s)
+		Sampler::Desc samplerDesc;
+		samplerDesc.setFilterMode(Sampler::Filter::Linear, Sampler::Filter::Linear, Sampler::Filter::Point);
+		pLinearSampler = Sampler::create(samplerDesc);
+
+		// Create RT program
 		RtProgram::Desc rtProgDesc;
 		rtProgDesc.addShaderLibrary(std::string(_SHADER_DIR) + "Pathtrace.rt.slang").setRayGen("rayGen");
 		rtProgDesc.addHitGroup(0, "primaryClosestHit", "primaryAnyHit").addMiss(0, "primaryMiss");
@@ -106,7 +125,8 @@ namespace GModDXR
 		pAccVars = ComputeVars::create(pAccProg->getReflector());
 		pAccState = ComputeState::create();
 
-		//pTonemapPass = ComputeProgram::createFromFile(std::string(_SHADER_DIR) + "Tonemap.cs.slang", "main");
+		pLuminancePass = FullScreenPass::create(std::string(_SHADER_DIR) + "Luminance.ps.slang");
+		pTonemapPass = FullScreenPass::create(std::string(_SHADER_DIR) + "Tonemap.ps.slang");
 	}
 
 	void Renderer::onLoad(RenderContext* pRenderContext)
@@ -144,22 +164,21 @@ namespace GModDXR
 		pScene->raytrace(pContext, pRaytraceProgram.get(), pRtVars, uint3(resolution, 1));
 
 		// Accumulation pass (temporal denoising)
-		bool bReset = false;
-
 		// Reset code taken from Falcor's accumulation render pass (designed for use in mogwai)
 		auto sceneUpdates = pScene->getUpdates();
 		if ((sceneUpdates & ~Scene::UpdateFlags::CameraPropertiesChanged) != Scene::UpdateFlags::None) {
-			bReset = true;
+			resetAccumulation = true;
 		} else if (is_set(sceneUpdates, Scene::UpdateFlags::CameraPropertiesChanged)) {
 			auto excluded = Camera::Changes::Jitter | Camera::Changes::History;
 			auto cameraChanges = pScene->getCamera()->getChanges();
-			if ((cameraChanges & ~excluded) != Camera::Changes::None) bReset = true;
+			if ((cameraChanges & ~excluded) != Camera::Changes::None) resetAccumulation = true;
 		}
 
-		if (bReset) {
+		if (resetAccumulation) {
 			pContext->clearUAV(pAccBufferSum->getUAV().get(), float4(0.f));
 			pContext->clearUAV(pAccBufferCorr->getUAV().get(), float4(0.f));
 			accumulatingSince = sampleIndex;
+			resetAccumulation = false;
 		}
 
 		Texture::SharedPtr pAccOutput = Texture::create2D(
@@ -178,7 +197,29 @@ namespace GModDXR
 		uint3 numGroups = div_round_up(uint3(resolution.x, resolution.y, 1u), pAccProg->getReflector()->getThreadGroupSize());
 		pAccState->setProgram(pAccProg);
 		pContext->dispatch(pAccState.get(), pAccVars.get(), numGroups);
-		pContext->blit(pAccOutput->getSRV(), pTargetFbo->getRenderTargetView(0));
+
+		// Luminance pass
+		Fbo::SharedPtr pLuminanceFbo;
+		{
+			Fbo::Desc lumFboDesc;
+			lumFboDesc.setColorTarget(0, ResourceFormat::RGBA32Float);
+			pLuminanceFbo = Fbo::create2D(resolution.x, resolution.y, lumFboDesc, 1, Fbo::kAttachEntireMipLevel);
+		}
+		pLuminancePass["gColorSampler"] = pLinearSampler;
+		pLuminancePass["gColorTex"] = pAccOutput;
+		pLuminancePass->execute(pContext, pLuminanceFbo);
+		pLuminanceFbo->getColorTexture(0)->generateMips(pContext);
+
+		// Tonemapping pass
+		// Calculate white balance transform for colour transform
+		float3x3 whiteBalanceTransform = useWhiteBalance ? calculateWhiteBalanceTransformRGB_Rec709(whitePoint) : glm::identity<float3x3>();
+		currentWhite = glm::inverse(whiteBalanceTransform) * float3(1.f);
+
+		pTonemapPass["gSampler"] = pLinearSampler;
+		pTonemapPass["gInput"] = pAccOutput;
+		pTonemapPass["gLuminance"] = pLuminanceFbo->getColorTexture(0);
+		pTonemapPass["PerFrameCB"]["gColourTransform"] = static_cast<float3x4>(whiteBalanceTransform * pow(2.f, exposureCompensation));
+		pTonemapPass->execute(pContext, std::make_shared<Fbo>(*pTargetFbo));
 
 		// Increment sample index
 		sampleIndex++;

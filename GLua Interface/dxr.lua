@@ -64,22 +64,29 @@ end
 --[[
 	Entities
 ]]
+print("GModDXR: Parsing entities...")
 local entities = {}
-for _, v in pairs(ents.FindByClass("prop_physics")) do
-	local meshes = util.GetModelMeshes(v:GetModel())
-	if meshes then
-		for i = 1, #meshes do
-			local subMat = Material(v:GetMaterial() ~= "" and v:GetMaterial() or (v:GetSubMaterial(i - 1) == "" and v:GetMaterials()[i] or v:GetSubMaterial(i - 1)))
-
-			entities[#entities + 1] = {
-				name = "Prop",
-				model = meshes[i].triangles,
-				colour = Vector(v:GetColor().r / 255, v:GetColor().g / 255, v:GetColor().b / 255),
-				alpha = v:GetColor().a / 255,
-				transform = GModMatrixToCPP(v:GetWorldTransformMatrix()),
-				baseTexture = subMat:GetString("$basetexture") and subMat:GetString("$basetexture")..".png" or "missingtexture.png",
-				normalTexture = subMat:GetString("$bumpmap") and subMat:GetString("$bumpmap")..".png" or ""
-			}
+for _, v in pairs(ents.GetAll() --[[ents.FindByClass("prop_physics")]]) do
+	if not v:GetNoDraw() then
+		local model = v:GetModel()
+		if model and model ~= "" then
+			local meshes = util.GetModelMeshes(model)
+			if meshes then
+				for i = 1, #meshes do
+					local subMat = Material(v:GetMaterial() ~= "" and v:GetMaterial() or (v:GetSubMaterial(i - 1) == "" and v:GetMaterials()[i] or v:GetSubMaterial(i - 1)))
+					if subMat and subMat ~= "" then
+						entities[#entities + 1] = {
+							name = "Prop",
+							model = meshes[i].triangles,
+							colour = Vector(v:GetColor().r / 255, v:GetColor().g / 255, v:GetColor().b / 255),
+							alpha = v:GetColor().a / 255,
+							transform = GModMatrixToCPP(v:GetWorldTransformMatrix()),
+							baseTexture = subMat:GetString("$basetexture") and subMat:GetString("$basetexture")..".png" or "missingtexture.png",
+							normalTexture = subMat:GetString("$bumpmap") and subMat:GetString("$bumpmap")..".png" or ""
+						}
+					end
+				end
+			end
 		end
 	end
 end
