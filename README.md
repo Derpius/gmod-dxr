@@ -1,11 +1,13 @@
 # Garry's Mod DXR On
 
-Decided to use [NVIDIA Falcor](https://developer.nvidia.com/falcor) as a nice abstraction layer over the extremely low level DirectX 12 API (well less a layer and more like an entire heavily moddable engine).  
+Binary module that renders the GMod environment almost entirely directly using DirectX Raytracing via NVIDIA's [Falcor framework](https://developer.nvidia.com/falcor).  
 
-So far I have a functional method for loading and unloading the Falcor renderer using surface infos for map geometry and importing props using textures extracted from vpks and converted to pngs in the `Data/Overrides` folder (subfolder created manually), without blocking the gmod process and piping in the required data from the GLua side, and can edit the debug ray tracing slang shader file without restarting gmod by just closing the Falcor window and reloading the GLua script.  
+Uses PNG textures placed in `GarrysMod/bin/win64/Data/Overrides/materials` with matching paths to the relative ones in an entity's VMT file (currently `$basetexture` and `$bumpmap`), and will hopefully eventually load texture data on the fly from mounted VPKs, GMAs, and filesystem addons (with the overrides folder being used for selective texture replacement, which would mainly be used for PBR textures like occlusion, metalness, and roughness).  
 
-I now also have an extremely basic iterative path tracer with a simple accumulation pass compute shader (now using the Falcor BSDF and multiple importance sampling of emissives).  
+The iterative path tracer currently handles diffuse and specular lobes of the Falcor BSDF, as well as direct lighting using analytic lights and emissives sampling with MIS (multiple importance sampling), with envmaps soon to come (which will also use MIS).  
 
-![Example Render](https://github.com/100PXSquared/gmod-dxr/blob/master/Screenshots/multiple%20importance%20sampling.png)  
+The accumulator and tonemapper shaders are modified versions of those found in Falcor's [tonemapper render pass](https://github.com/NVIDIAGameWorks/Falcor/tree/master/Source/RenderPasses/ToneMapper), using compensated accumulation, and ACES tonemapping with auto exposure and toggleable white balance adjustment.  
 
-Map surfaces will be broken until I implement loading BSPs myself.
+![Example Render](https://github.com/100PXSquared/gmod-dxr/blob/master/Screenshots/ACES%20tonemapping.png)  
+
+Map surfaces will be broken until I implement loading BSPs myself, as GMod's [SurfaceInfo](https://wiki.facepunch.com/gmod/SurfaceInfo) classes are missing key faces (although unlikely, this may be due to some SurfaceInfos being present on entities other than world, which I have yet to test).
