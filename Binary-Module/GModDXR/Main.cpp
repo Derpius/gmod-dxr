@@ -408,7 +408,7 @@ LUA_FUNCTION(LaunchFalcor)
 			LUA->Pop(3);
 
 			pMesh->addVertex(pos, normal, uv);
-			if (j % 3 == 2) pMesh->addTriangle(j - 2U, j - 1U, j);
+			if (j % 3 == 2) pMesh->addTriangle(j, j - 1U, j - 2U);
 		}
 		LUA->Pop();
 

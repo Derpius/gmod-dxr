@@ -142,7 +142,7 @@ void evalDirect(inout IndirectRayData rayData, const ShadingData sd, float3 orig
 	}
 }
 
-void sampleIndirect(const ShadingData sd, float3 origin, inout IndirectRayData rayData)
+void sampleIndirect(const ShadingData sd, inout IndirectRayData rayData)
 {
 	// Sample BSDF
 	BSDFSample result;
@@ -154,7 +154,7 @@ void sampleIndirect(const ShadingData sd, float3 origin, inout IndirectRayData r
 
 	// Update ray data object
 	rayData.pdfLast = result.pdf;
-	rayData.origin = origin;
+	rayData.origin = sd.computeNewRayOrigin(!result.isLobe(LobeType::Transmission));
 	rayData.direction = result.wi;
 	rayData.throughput *= result.weight;
 }
@@ -221,14 +221,14 @@ void indirectClosestHit(
 	sd.opacity = sd.opacity * gScene.materials[materialID].baseColor.a;
 	sd.emissive = sd.emissive + gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
 
-	// Calc biased origin
-	float3 origin = sd.computeNewRayOrigin();
-
-	// Evaluate direct lighting
-	evalDirect(rayData, sd, origin, hitIndex, triangleIndex);
+	// Fix backfacing normals due to normal mapping and vertex normals
+	adjustShadingNormal(sd, v);
 
 	// Sample next ray
-	sampleIndirect(sd, origin, rayData);
+	sampleIndirect(sd, rayData);
+
+	// Evaluate direct lighting
+	evalDirect(rayData, sd, rayData.origin, hitIndex, triangleIndex);
 
 	// Russian Roulette
 	float p = max(rayData.throughput.x, max(rayData.throughput.y, rayData.throughput.z));
@@ -286,8 +286,8 @@ void primaryClosestHit(
 	// Create sample generator
 	SampleGenerator generator = SampleGenerator.create(hitData.launchIndex.xy, sampleIndex);
 
-	// Calculate biased hit point
-	float3 origin = sd.computeNewRayOrigin();
+	// Fix backfacing normals due to normal mapping and vertex normals
+	adjustShadingNormal(sd, v);
 
 	// Lighting
 	// Prepare reused ray
@@ -303,11 +303,11 @@ void primaryClosestHit(
 	indRayData.terminated = false;
 	indRayData.pdfLast = 1.f;
 
-	// Eval direct lighting at primary ray hit
-	evalDirect(indRayData, sd, origin, hitIndex, triangleIndex);
-
 	// Sample first indirect ray
-	sampleIndirect(sd, origin, indRayData);
+	sampleIndirect(sd, indRayData);
+
+	// Eval direct lighting at primary ray hit
+	evalDirect(indRayData, sd, indRayData.origin, hitIndex, triangleIndex);
 
 	// Scatter
 	[loop]
@@ -315,7 +315,7 @@ void primaryClosestHit(
 		// Trace indirect ray
 		indirectRay.Origin = indRayData.origin;
 		indirectRay.Direction = indRayData.direction;
-		TraceRay(gRtScene, RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, 0xFF, 2, hitProgramCount, 2, indirectRay, indRayData);
+		TraceRay(gRtScene, 0, 0xFF, 2, hitProgramCount, 2, indirectRay, indRayData);
 	}
 
 	// Assign colour to primary ray payload
@@ -342,6 +342,6 @@ void rayGen(
 
 	PrimaryRayData hitData;
 	hitData.launchIndex = launchIndex;
-	TraceRay(gRtScene, RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, 0xFF, 0, hitProgramCount, 0, ray, hitData);
+	TraceRay(gRtScene, 0, 0xFF, 0, hitProgramCount, 0, ray, hitData);
 	gOutput[launchIndex.xy] = hitData.colour;
 }
