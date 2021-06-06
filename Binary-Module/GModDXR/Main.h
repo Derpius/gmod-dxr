@@ -3,6 +3,7 @@
 #include "Falcor.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Experimental/Scene/Lights/EmissivePowerSampler.h"
+#include "Experimental/Scene/Lights/EnvMapSampler.h"
 
 namespace GModDXR
 {
@@ -66,6 +67,7 @@ namespace GModDXR
 		uint sampleIndex = 0;
 		SampleGenerator::SharedPtr pSampleGenerator;
 		EmissiveLightSampler::SharedPtr pEmissiveSampler;
+		EnvMapSampler::SharedPtr pEnvMapSampler;
 
 		const WorldData* pWorldData;
 

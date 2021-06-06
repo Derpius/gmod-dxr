@@ -1,7 +1,5 @@
 #include "Utils/Math/MathConstants.slangh"
 
-#define _USE_LEGACY_SHADING_CODE 0
-
 import Scene.Shading;
 import Scene.Raytracing;
 
@@ -13,6 +11,7 @@ import Utils.Sampling.SampleGenerator;
 import Experimental.Scene.Material.MaterialShading;
 import Experimental.Scene.Lights.LightHelpers;
 import Experimental.Scene.Lights.EmissiveLightSampler;
+import Experimental.Scene.Lights.EnvMapSampler;
 
 #define MIN_COS_THETA 0.f
 
@@ -25,7 +24,9 @@ cbuffer PerFrameCB
 	bool useDOF;
 	float4 kClearColour;
 	bool bSampleEmissives;
+	bool bSampleEnvMap;
 	EmissiveLightSampler emissiveSampler;
+	EnvMapSampler envMapSampler;
 };
 
 struct PrimaryRayData
@@ -50,6 +51,30 @@ struct ShadowRayData
 {
 	bool visible;
 };
+
+struct LightProbabilities
+{
+	float analytic;
+	float emissive;
+	float envmap;
+};
+
+LightProbabilities lightSelectionProbs()
+{
+	LightProbabilities p;
+	p.analytic = gScene.getLightCount() > 0 ? 1.f : 0.f;
+	p.emissive = bSampleEmissives ? 1.f : 0.f;
+	p.envmap = bSampleEnvMap ? 1.f : 0.f;
+
+	float sum = p.analytic + p.emissive + p.envmap;
+	if (sum == 0.f) return p;
+
+	p.analytic /= sum;
+	p.emissive /= sum;
+	p.envmap /= sum;
+
+	return p;
+}
 
 // evalMIS is a simplified version of the one found in PathTracerHelpers.slang
 /** Evaluates the currently configured heuristic for multiple importance sampling (MIS).
@@ -115,29 +140,55 @@ float3 evalDirectAnalytic(const ShadingData sd, float3 rayOrigin, inout SampleGe
 
 void evalDirect(inout IndirectRayData rayData, const ShadingData sd, float3 origin, uint hitId, uint triId)
 {
+	LightProbabilities lightPs = lightSelectionProbs();
+
 	// Add emissive contribution
-	if (any(sd.emissive > 0.f)) {
+	if (bSampleEmissives && any(sd.emissive > 0.f)) {
 		TriangleHit hit;
 		hit.triangleIndex = gScene.lightCollection.getTriangleIndex(hitId, triId);
 		hit.posW = sd.posW;
 		hit.normalW = sd.frontFacing ? sd.faceN : -sd.faceN;
 
-		rayData.colour += rayData.throughput * sd.emissive * evalMIS(rayData.pdfLast, emissiveSampler.evalPdf(origin, sd.N, true, hit) / 2.f);
+		rayData.colour += rayData.throughput * sd.emissive * evalMIS(rayData.pdfLast, emissiveSampler.evalPdf(origin, sd.N, true, hit) / lightPs.emissive);
 	}
 
 	// Add direct contribution
-	if (bSampleEmissives && sampleNext1D(rayData.sg) < 0.5f) {
-		TriangleLightSample lightSample;
+	float u = sampleNext1D(rayData.sg);
+	if (bSampleEmissives) {
+		if (u < lightPs.emissive) {
+			TriangleLightSample lightSample;
 
-		bool valid = emissiveSampler.sampleLight(origin, sd.N, true, rayData.sg, lightSample);
-		if (!valid || dot(sd.N, lightSample.dir) <= MIN_COS_THETA) return;
+			bool valid = emissiveSampler.sampleLight(origin, sd.N, true, rayData.sg, lightSample);
+			if (!valid || dot(sd.N, lightSample.dir) <= MIN_COS_THETA) return;
 
-		bool visible = traceShadowRay(lightSample.posW + lightSample.normalW, lightSample.dir, lightSample.distance);
-		if (!visible) return;
+			bool visible = traceShadowRay(origin, lightSample.dir, lightSample.distance);
+			if (!visible) return;
 
-		float3 emitColour = lightSample.Le * evalMIS(lightSample.pdf / 2.f, evalPdfBSDF(sd, lightSample.dir)) / lightSample.pdf;
-		rayData.colour += rayData.throughput * evalBSDFCosine(sd, lightSample.dir) * emitColour;
-	} else {
+			float pdf = lightSample.pdf * lightPs.emissive;
+			float3 emitColour = lightSample.Le * evalMIS(pdf, evalPdfBSDF(sd, lightSample.dir)) / pdf;
+			rayData.colour += rayData.throughput * evalBSDFCosine(sd, lightSample.dir) * emitColour;
+			return;
+		}
+		u -= lightPs.emissive;
+	}
+
+	if (bSampleEnvMap) {
+		if (u < lightPs.envmap) {
+			EnvMapSample lightSample;
+			envMapSampler.sample(sampleNext2D(rayData.sg), lightSample);
+			if (dot(sd.N, lightSample.dir) <= MIN_COS_THETA) return;
+
+			bool visible = traceShadowRay(origin, lightSample.dir, FLT_MAX);
+			if (!visible) return;
+
+			float pdf = lightSample.pdf * lightPs.envmap;
+			float3 emitColour = lightSample.Le * evalMIS(pdf, evalPdfBSDF(sd, lightSample.dir)) / pdf;
+			rayData.colour += rayData.throughput * evalBSDFCosine(sd, lightSample.dir) * emitColour;
+			return;
+		}
+	}
+
+	if (gScene.getLightCount() > 0) {
 		rayData.colour += rayData.throughput * evalDirectAnalytic(sd, origin, rayData.sg);
 	}
 }
@@ -147,7 +198,7 @@ void sampleIndirect(const ShadingData sd, inout IndirectRayData rayData)
 	// Sample BSDF
 	BSDFSample result;
 	const bool valid = sampleBSDF(sd, rayData.sg, result);
-	if (!valid || result.pdf == 0.f) {
+	if (!valid) {
 		rayData.terminated = true;
 		return;
 	}
@@ -171,7 +222,7 @@ void shadowAnyHit(
 	inout ShadowRayData hitData,
 	in BuiltInTriangleIntersectionAttributes attribs
 ) {
-	// Alpha test for non-opaque geometry. (will need to remove when I've implemented refraction)
+	// Alpha test for non-opaque geometry
 	VertexData v = getVertexData(hitParams, PrimitiveIndex(), attribs);
 	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
 	if (alphaTest(v, gScene.materials[materialID], gScene.materialResources[materialID], 0.f)) {
@@ -182,7 +233,9 @@ void shadowAnyHit(
 [shader("miss")]
 void indirectMiss(inout IndirectRayData hitData)
 {
-	// Add IBL here
+	if (bSampleEnvMap)
+		hitData.colour += hitData.throughput * envMapSampler.eval(hitData.direction) * evalMIS(hitData.pdfLast, envMapSampler.evalPdf(hitData.direction) / lightSelectionProbs().envmap);
+	
 	hitData.terminated = true;
 }
 
@@ -192,7 +245,7 @@ void indirectAnyHit(
 	inout IndirectRayData rayData,
 	BuiltInTriangleIntersectionAttributes attribs
 ) {
-	// Alpha test for non-opaque geometry. (will need to remove when I've implemented refraction)
+	// Alpha test for non-opaque geometry
 	VertexData v = getVertexData(hitParams, PrimitiveIndex(), attribs);
 	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
 	if (alphaTest(v, gScene.materials[materialID], gScene.materialResources[materialID], 0.f)) {
@@ -218,8 +271,7 @@ void indirectClosestHit(
 
 	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
 	sd.diffuse = sd.diffuse * gScene.materials[materialID].baseColor.rgb;
-	sd.opacity = sd.opacity * gScene.materials[materialID].baseColor.a;
-	sd.emissive = sd.emissive + gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
+	sd.emissive = sd.emissive * gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
 
 	// Fix backfacing normals due to normal mapping and vertex normals
 	adjustShadingNormal(sd, v);
@@ -242,7 +294,7 @@ void indirectClosestHit(
 [shader("miss")]
 void primaryMiss(inout PrimaryRayData hitData)
 {
-	hitData.colour = kClearColour;
+	hitData.colour = bSampleEnvMap ? float4(gScene.envMap.eval(WorldRayDirection()), 1.f) : kClearColour;
 	hitData.hitT = -1;
 }
 
@@ -252,7 +304,7 @@ void primaryAnyHit(
 	inout PrimaryRayData rayData,
 	BuiltInTriangleIntersectionAttributes attribs
 ) {
-	// Alpha test for non-opaque geometry. (will need to remove when I've implemented refraction)
+	// Alpha test for non-opaque geometry
 	VertexData v = getVertexData(hitParams, PrimitiveIndex(), attribs);
 	uint materialID = gScene.getMaterialID(hitParams.getGlobalHitID());
 	if (alphaTest(v, gScene.materials[materialID], gScene.materialResources[materialID], 0.f)) {
@@ -280,8 +332,7 @@ void primaryClosestHit(
 	// Prepare shading data
 	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
 	sd.diffuse = sd.diffuse * gScene.materials[materialID].baseColor.rgb;
-	sd.opacity = sd.opacity * gScene.materials[materialID].baseColor.a;
-	sd.emissive = sd.emissive + gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
+	sd.emissive = sd.emissive * gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
 
 	// Create sample generator
 	SampleGenerator generator = SampleGenerator.create(hitData.launchIndex.xy, sampleIndex);
@@ -311,7 +362,7 @@ void primaryClosestHit(
 
 	// Scatter
 	[loop]
-	for (uint depth = 0; depth < 5 && !indRayData.terminated; depth++) {
+	for (uint depth = 0; depth < 3 && !indRayData.terminated; depth++) {
 		// Trace indirect ray
 		indirectRay.Origin = indRayData.origin;
 		indirectRay.Direction = indRayData.direction;

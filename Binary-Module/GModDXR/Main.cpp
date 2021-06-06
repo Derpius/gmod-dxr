@@ -62,13 +62,15 @@ namespace GModDXR
 		// Iterate over all entities
 		for (size_t i = 0; i < pMeshes->size(); i++) {
 			// Load image textures
+			// Diffuse
 			std::string filename = std::string("Overrides/materials/") + pTextures->at(i).baseColour;
 			std::string fullPath;
 			if (!findFileInDataDirectories(filename, fullPath)) {
-				filename = std::string("Overrides/materials/missingtexture.png");
+				filename = std::string("Overrides/materials/gmoddxr_missingtexture.png");
 			}
 			pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::BaseColor, filename);
 
+			// Normal map
 			if (!pTextures->at(i).normalMap.empty())
 				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Normal, std::string("Overrides/materials/") + pTextures->at(i).normalMap);
 
@@ -113,6 +115,10 @@ namespace GModDXR
 		pRaytraceProgram->addDefines(pSampleGenerator->getDefines());
 		pRaytraceProgram->addDefines(pEmissiveSampler->getDefines());
 
+		Program::DefineList defines;
+		defines.add("_USE_LEGACY_SHADING_CODE", "0");
+		pRaytraceProgram->addDefines(defines);
+
 		pRtVars = RtProgramVars::create(pRaytraceProgram, pScene);
 
 		auto pGlobalVars = pRtVars->getRootVar();
@@ -149,7 +155,6 @@ namespace GModDXR
 		cb["sampleIndex"] = sampleIndex;
 		cb["useDOF"] = useDOF;
 		cb["kClearColour"] = kClearColour;
-		cb["bSampleEmissives"] = pScene->useEmissiveLights();
 		pRtVars->getRayGenVars()["gOutput"] = pRtOut;
 	}
 
@@ -230,13 +235,30 @@ namespace GModDXR
 		pRenderContext->clearFbo(pTargetFbo.get(), kClearColour, 1.0f, 0, FboAttachmentType::All);
 
 		if (pScene) {
+			pScene->getLightCollection(pRenderContext);
 			pScene->update(pRenderContext, gpFramework->getGlobalClock().getTime());
 
 			if (pScene->useEmissiveLights()) {
-				pScene->getLightCollection(pRenderContext);
 				pEmissiveSampler->update(pRenderContext);
-				bool success = pEmissiveSampler->setShaderData(pRtVars["PerFrameCB"]["gEmissiveSampler"]);
+				bool success = pEmissiveSampler->setShaderData(pRtVars["PerFrameCB"]["emissiveSampler"]);
 				if (!success) logError("Failed to bind emissive sampler");
+				pRtVars["PerFrameCB"]["bSampleEmissives"] = true;
+			} else {
+				pRtVars["PerFrameCB"]["bSampleEmissives"] = false;
+			}
+
+			if (is_set(pScene->getUpdates(), Scene::UpdateFlags::EnvMapChanged))
+				pEnvMapSampler = nullptr;
+
+			if (pScene->useEnvLight()) {
+				if (!pEnvMapSampler) {
+					pEnvMapSampler = EnvMapSampler::create(pRenderContext, pScene->getEnvMap());
+					pEnvMapSampler->setShaderData(pRtVars["PerFrameCB"]["envMapSampler"]);
+				}
+				pRtVars["PerFrameCB"]["bSampleEnvMap"] = true;
+			} else {
+				if (pEnvMapSampler) pEnvMapSampler = nullptr;
+				pRtVars["PerFrameCB"]["bSampleEnvMap"] = false;
 			}
 
 			renderRT(pRenderContext, pTargetFbo.get());
@@ -420,7 +442,14 @@ LUA_FUNCTION(LaunchFalcor)
 		LUA->GetField(7, "colour");
 		LUA->GetField(7, "alpha");
 		pMaterial->setBaseColor(Falcor::float4(LUA->GetVector(-2).x, LUA->GetVector(-2).y, LUA->GetVector(-2).z, LUA->GetNumber()));
+		pMaterial->setSpecularTransmission(1.f - LUA->GetNumber());
+		if (LUA->GetNumber() < 1.f) pMaterial->setDoubleSided(true); // If the object is transparent, set it to double sided (note that this will only handle baseColour alpha, not transparent textures)
+		pMaterial->setEmissiveColor(Falcor::float3(LUA->GetVector(-2).x, LUA->GetVector(-2).y, LUA->GetVector(-2).z));
 		LUA->Pop(2);
+
+		LUA->GetField(7, "emissive");
+		pMaterial->setEmissiveFactor(LUA->GetNumber());
+		LUA->Pop();
 
 		float ang[4][4];
 

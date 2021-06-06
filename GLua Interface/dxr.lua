@@ -80,6 +80,7 @@ for _, v in pairs(ents.GetAll() --[[ents.FindByClass("prop_physics")]]) do
 							model = meshes[i].triangles,
 							colour = Vector(v:GetColor().r / 255, v:GetColor().g / 255, v:GetColor().b / 255),
 							alpha = v:GetColor().a / 255,
+							emissive = subMat:GetString("$basetexture") == "lights/white" and 1 or 0, // Falcor wont update which tris are emissive after scene build, so we need to define what is before
 							transform = GModMatrixToCPP(v:GetWorldTransformMatrix()),
 							baseTexture = subMat:GetString("$basetexture") and subMat:GetString("$basetexture")..".png" or "missingtexture.png",
 							normalTexture = subMat:GetString("$bumpmap") and subMat:GetString("$bumpmap")..".png" or ""
