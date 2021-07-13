@@ -365,13 +365,13 @@ LUA_FUNCTION(LaunchFalcor)
 			LUA->GetField(-3, "Material");
 			LUA->PushString(materialPath.c_str());
 			LUA->Call(1, 1);
-			if (LUA->IsType(-1, Type::Nil)) LUA->ThrowError("Invalid material on entity");
+			if (!LUA->IsType(-1, Type::Material)) LUA->ThrowError("Invalid material on entity");
 
 			const std::string baseTexture = getMaterialString(LUA, "$basetexture");
 			const std::string normalMap = getMaterialString(LUA, "$bumpmap");
 			LUA->Pop(); // Pop material object
 
-			textures.push_back(GModDXR::TextureList{ baseTexture + ".png", normalMap + ".png" });
+			textures.push_back(GModDXR::TextureList{ baseTexture, normalMap });
 
 			// Populate material
 			LUA->GetField(-4, "GetColor");

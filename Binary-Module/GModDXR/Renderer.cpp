@@ -63,14 +63,18 @@ namespace GModDXR
 			// Diffuse
 			std::string filename = std::string("Overrides/materials/") + pTextures->at(i).baseColour;
 			std::string fullPath;
-			if (!findFileInDataDirectories(filename, fullPath)) {
-				filename = std::string("Overrides/materials/gmoddxr_missingtexture.png");
+			if (!findFileInDataDirectories(filename + ".png", fullPath)) {
+				filename = "Overrides/materials/gmoddxr_missingtexture";
 			}
-			pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::BaseColor, filename);
+			pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::BaseColor, filename + ".png");
+
+			if (findFileInDataDirectories(filename + "_mrao.png", fullPath))
+				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Specular, filename + "_mrao.png");
 
 			// Normal map
-			if (!pTextures->at(i).normalMap.empty())
-				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Normal, std::string("Overrides/materials/") + pTextures->at(i).normalMap);
+			filename = std::string("Overrides/materials/") + pTextures->at(i).normalMap;
+			if (!pTextures->at(i).normalMap.empty() && findFileInDataDirectories(filename + ".png", fullPath))
+				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Normal, filename + ".png");
 
 			// Add mesh instance
 			pBuilder->addMeshInstance(pBuilder->addNode(pNodes->at(i)), pBuilder->addTriangleMesh(pMeshes->at(i), pMaterials->at(i)));
@@ -99,7 +103,7 @@ namespace GModDXR
 
 		// Create RT program
 		RtProgram::Desc rtProgDesc;
-		rtProgDesc.addShaderLibrary(std::string(_SHADER_DIR) + "Pathtrace.rt.slang").setRayGen("rayGen");
+		rtProgDesc.addShaderLibrary("Pathtrace.rt.slang").setRayGen("rayGen");
 		rtProgDesc.addHitGroup(0, "primaryClosestHit", "primaryAnyHit").addMiss(0, "primaryMiss");
 		rtProgDesc.addHitGroup(1, "", "shadowAnyHit").addMiss(1, "shadowMiss");
 		rtProgDesc.addHitGroup(2, "indirectClosestHit", "indirectAnyHit").addMiss(2, "indirectMiss");
@@ -125,12 +129,12 @@ namespace GModDXR
 
 		pRaytraceProgram->setScene(pScene);
 
-		pAccProg = ComputeProgram::createFromFile(std::string(_SHADER_DIR) + "Accumulate.cs.slang", "main");
+		pAccProg = ComputeProgram::createFromFile("Accumulate.cs.slang", "main");
 		pAccVars = ComputeVars::create(pAccProg->getReflector());
 		pAccState = ComputeState::create();
 
-		pLuminancePass = FullScreenPass::create(std::string(_SHADER_DIR) + "Luminance.ps.slang");
-		pTonemapPass = FullScreenPass::create(std::string(_SHADER_DIR) + "Tonemap.ps.slang");
+		pLuminancePass = FullScreenPass::create("Luminance.ps.slang");
+		pTonemapPass = FullScreenPass::create("Tonemap.ps.slang");
 	}
 
 	void Renderer::onLoad(RenderContext* pRenderContext)
