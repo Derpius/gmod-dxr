@@ -3,7 +3,7 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <FALCOR_BACKEND>FALCOR_D3D12</FALCOR_BACKEND>
-    <FALCOR_CORE_DIRECTORY>D:\Programming\GitHub\gmod-dxr\Binary-Module\Falcor\Source</FALCOR_CORE_DIRECTORY>
+    <FALCOR_CORE_DIRECTORY>$(SolutionDir)..\Falcor\Source</FALCOR_CORE_DIRECTORY>
   </PropertyGroup>
   <PropertyGroup />
   <ItemDefinitionGroup />
