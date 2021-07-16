@@ -270,8 +270,6 @@ void indirectClosestHit(
 	uint materialID = gScene.getMaterialID(hitIndex);
 
 	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
-	sd.diffuse = sd.diffuse * gScene.materials[materialID].baseColor.rgb;
-	sd.emissive = sd.emissive * gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
 
 	// Fix backfacing normals due to normal mapping and vertex normals
 	adjustShadingNormal(sd, v);
@@ -331,8 +329,6 @@ void primaryClosestHit(
 	
 	// Prepare shading data
 	ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -rayDirW, 0);
-	sd.diffuse = sd.diffuse * gScene.materials[materialID].baseColor.rgb;
-	sd.emissive = sd.emissive * gScene.materials[materialID].emissive * gScene.materials[materialID].emissiveFactor;
 
 	// Create sample generator
 	SampleGenerator generator = SampleGenerator.create(hitData.launchIndex.xy, sampleIndex);

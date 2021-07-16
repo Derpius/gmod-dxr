@@ -71,6 +71,13 @@ namespace GModDXR
 			if (findFileInDataDirectories(filename + "_mrao.png", fullPath))
 				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Specular, filename + "_mrao.png");
 
+			if (findFileInDataDirectories(filename + "_emission.png", fullPath))
+				pMaterials->at(i)->setEmissiveFactor(1.f);
+				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Emissive, filename + "_emission.png");
+
+			if (findFileInDataDirectories(filename + "_transmission.png", fullPath))
+				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::SpecularTransmission, filename + "_transmission.png");
+
 			// Normal map
 			filename = std::string("Overrides/materials/") + pTextures->at(i).normalMap;
 			if (!pTextures->at(i).normalMap.empty() && findFileInDataDirectories(filename + ".png", fullPath))
