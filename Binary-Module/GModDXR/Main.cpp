@@ -23,7 +23,7 @@ static GModDXR::WorldData worldData;
 static bool TRACING = false;
 void falcorThreadWrapper(
 	const Vector camPos, const Vector camTarget,
-	std::vector<Falcor::TriangleMesh::SharedPtr> meshes, std::vector<Falcor::Material::SharedPtr> materials, std::vector<Falcor::SceneBuilder::Node> nodes, std::vector<GModDXR::TextureList> textures
+	std::vector<Falcor::TriangleMesh::SharedPtr> meshes, std::vector<Falcor::Material::SharedPtr> materials, std::vector<Falcor::SceneBuilder::Node> nodes, std::vector<GModDXR::TextureDesc> textures
 ) {
 	// Create renderer
 	GModDXR::Renderer::UniquePtr pRenderer = std::make_unique<GModDXR::Renderer>();
@@ -55,49 +55,6 @@ void printLua(GarrysMod::Lua::ILuaBase* inst, const char text[])
 	inst->PushString(text);
 	inst->Call(1, 0);
 	inst->Pop();
-}
-
-void dumpStack(GarrysMod::Lua::ILuaBase* inst)
-{
-	using namespace GarrysMod::Lua;
-	std::string toPrint = "";
-
-	int max = inst->Top();
-	for (int i = 1; i <= max; i++) {
-		toPrint += "[" + std::to_string(i) + "] ";
-		switch (inst->GetType(i)) {
-		case Type::Angle:
-			toPrint += "Angle: (" + std::to_string((int)inst->GetAngle(i).x) + ", " + std::to_string((int)inst->GetAngle(i).y) + ", " + std::to_string((int)inst->GetAngle(i).z) + ")";
-			break;
-		case Type::Bool:
-			toPrint += "Bool: " + inst->GetBool(i);
-			break;
-		case Type::Function:
-			toPrint += "Function";
-			break;
-		case Type::Nil:
-			toPrint += "nil";
-			break;
-		case Type::Number:
-			toPrint += "Number: " + std::to_string(inst->GetNumber(i));
-			break;
-		case Type::String:
-			toPrint += "String: " + (std::string)inst->GetString(i);
-			break;
-		case Type::Table:
-			toPrint += "Table";
-			break;
-		case Type::Entity:
-			toPrint += "Entity";
-			break;
-		default:
-			toPrint += "Unknown";
-			break;
-		}
-		toPrint += "\n";
-	}
-
-	printLua(inst, toPrint.c_str());
 }
 
 // Skins a vertex to its bones
@@ -138,6 +95,58 @@ std::string getMaterialString(GarrysMod::Lua::ILuaBase* LUA, const std::string k
 	return val;
 }
 
+enum MaterialFlags
+{
+	debug = 1,
+	no_fullbright = 2,
+	no_draw = 4,
+	use_in_fillrate_mode = 8,
+	vertexcolor = 16,
+	vertexalpha = 32,
+	selfillum = 64,
+	additive = 128,
+	alphatest = 256,
+	multipass = 512,
+	znearer = 1024,
+	model = 2048,
+	flat = 4096,
+	nocull = 8192,
+	nofog = 16384,
+	ignorez = 32768,
+	decal = 65536,
+	envmapsphere = 131072,
+	noalphamod = 262144,
+	envmapcameraspace = 524288,
+	basealphaenvmapmask = 1048576,
+	translucent = 2097152,
+	normalmapalphaenvmapmask = 4194304,
+	softwareskin = 8388608,
+	opaquetexture = 16777216,
+	envmapmode = 33554432,
+	nodecal = 67108864,
+	halflambert = 134217728,
+	wireframe = 268435456,
+	allowalphatocoverage = 536870912
+};
+inline MaterialFlags operator|(MaterialFlags a, MaterialFlags b)
+{
+	return static_cast<MaterialFlags>(static_cast<unsigned int>(a) | static_cast<unsigned int>(b));
+}
+
+// Returns true if the specified flags are present in the material at the top of the stack
+bool checkMaterialFlags(GarrysMod::Lua::ILuaBase* LUA, const MaterialFlags flags)
+{
+	unsigned int flagVal = 0;
+	LUA->GetField(-1, "GetInt");
+	LUA->Push(-2);
+	LUA->PushString("$flags");
+	LUA->Call(2, 1);
+	if (LUA->IsType(-1, GarrysMod::Lua::Type::Number)) flagVal = static_cast<unsigned int>(LUA->GetNumber());
+	LUA->Pop();
+
+	return (flagVal & static_cast<unsigned int>(flags)) == static_cast<unsigned int>(flags);
+}
+
 /*
 	Entrypoint for the application when loaded from GLua
 	
@@ -157,7 +166,7 @@ LUA_FUNCTION(LaunchFalcor)
 	auto meshes = std::vector<Falcor::TriangleMesh::SharedPtr>();
 	auto materials = std::vector<Falcor::Material::SharedPtr>();
 	auto nodes = std::vector<Falcor::SceneBuilder::Node>();
-	auto textures = std::vector<GModDXR::TextureList>();
+	auto textures = std::vector<GModDXR::TextureDesc>();
 
 	// Iterate over entities
 	size_t numEntities = LUA->ObjLen(6);
@@ -369,9 +378,10 @@ LUA_FUNCTION(LaunchFalcor)
 
 			const std::string baseTexture = getMaterialString(LUA, "$basetexture");
 			const std::string normalMap = getMaterialString(LUA, "$bumpmap");
+			const bool alphaTest = checkMaterialFlags(LUA, MaterialFlags::alphatest);
 			LUA->Pop(); // Pop material object
 
-			textures.push_back(GModDXR::TextureList{ baseTexture, normalMap });
+			textures.push_back(GModDXR::TextureDesc{ baseTexture, normalMap, alphaTest });
 
 			// Populate material
 			LUA->GetField(-4, "GetColor");

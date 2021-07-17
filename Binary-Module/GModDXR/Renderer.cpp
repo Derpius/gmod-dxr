@@ -47,7 +47,7 @@ namespace GModDXR
 
 		Material::SharedPtr pWorldMat = Material::create("World");
 		pWorldMat->setShadingModel(ShadingModelMetalRough);
-		pWorldMat->setBaseColor(float4(0.9f));
+		pWorldMat->setBaseColor(float4(float3(0.9f), 1.f));
 		pWorldMat->setRoughness(1.f);
 		pWorldMat->setMetallic(0.f);
 
@@ -66,22 +66,27 @@ namespace GModDXR
 			if (!findFileInDataDirectories(filename + ".png", fullPath)) {
 				filename = "Overrides/materials/gmoddxr_missingtexture";
 			}
-			pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::BaseColor, filename + ".png");
+			pMaterials->at(i)->loadTexture(Material::TextureSlot::BaseColor, filename + ".png");
 
 			if (findFileInDataDirectories(filename + "_mrao.png", fullPath))
 				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Specular, filename + "_mrao.png");
 
-			if (findFileInDataDirectories(filename + "_emission.png", fullPath))
+			if (findFileInDataDirectories(filename + "_emission.png", fullPath)) {
 				pMaterials->at(i)->setEmissiveFactor(1.f);
 				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Emissive, filename + "_emission.png");
+			}
 
-			if (findFileInDataDirectories(filename + "_transmission.png", fullPath))
+			if (findFileInDataDirectories(filename + "_transmission.png", fullPath)) {
+				pMaterials->at(i)->setDoubleSided(true);
 				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::SpecularTransmission, filename + "_transmission.png");
+			}
 
 			// Normal map
 			filename = std::string("Overrides/materials/") + pTextures->at(i).normalMap;
 			if (!pTextures->at(i).normalMap.empty() && findFileInDataDirectories(filename + ".png", fullPath))
 				pBuilder->loadMaterialTexture(pMaterials->at(i), Material::TextureSlot::Normal, filename + ".png");
+
+			pMaterials->at(i)->setAlphaMode(pTextures->at(i).alphatest ? AlphaModeMask : AlphaModeOpaque);
 
 			// Add mesh instance
 			pBuilder->addMeshInstance(pBuilder->addNode(pNodes->at(i)), pBuilder->addTriangleMesh(pMeshes->at(i), pMaterials->at(i)));
@@ -313,7 +318,7 @@ namespace GModDXR
 		cameraStartTarget = target;
 	}
 
-	void Renderer::setEntities(std::vector<TriangleMesh::SharedPtr>* meshes, std::vector<Material::SharedPtr>* materials, std::vector<SceneBuilder::Node>* nodes, std::vector<TextureList>* textures)
+	void Renderer::setEntities(std::vector<TriangleMesh::SharedPtr>* meshes, std::vector<Material::SharedPtr>* materials, std::vector<SceneBuilder::Node>* nodes, std::vector<TextureDesc>* textures)
 	{
 		pMeshes = meshes;
 		pMaterials = materials;

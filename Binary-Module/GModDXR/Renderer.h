@@ -17,10 +17,11 @@ namespace GModDXR
 		Falcor::float3 sunDirection;
 	};
 
-	struct TextureList
+	struct TextureDesc
 	{
 		std::string baseColour;
 		std::string normalMap;
+		bool alphatest;
 	};
 
 	class Renderer : public Falcor::IRenderer
@@ -35,7 +36,7 @@ namespace GModDXR
 
 		void setWorldData(const WorldData* data);
 		void setCameraDefaults(const Falcor::float3 pos, const Falcor::float3 target);
-		void setEntities(std::vector<Falcor::TriangleMesh::SharedPtr>* meshes, std::vector<Falcor::Material::SharedPtr>* materials, std::vector<Falcor::SceneBuilder::Node>* nodes, std::vector<TextureList>* textures);
+		void setEntities(std::vector<Falcor::TriangleMesh::SharedPtr>* meshes, std::vector<Falcor::Material::SharedPtr>* materials, std::vector<Falcor::SceneBuilder::Node>* nodes, std::vector<TextureDesc>* textures);
 
 	private:
 		Falcor::SceneBuilder::SharedPtr pBuilder;
@@ -74,7 +75,7 @@ namespace GModDXR
 		std::vector<Falcor::TriangleMesh::SharedPtr>* pMeshes;
 		std::vector<Falcor::Material::SharedPtr>* pMaterials;
 		std::vector<Falcor::SceneBuilder::Node>* pNodes;
-		std::vector<TextureList>* pTextures;
+		std::vector<TextureDesc>* pTextures;
 
 		float zNear = 0.01f;
 		float zFar = 100.f;
