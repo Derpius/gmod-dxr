@@ -63,6 +63,8 @@ namespace GModDXR
 
 		Falcor::FullScreenPass::SharedPtr pLuminancePass;
 		Falcor::FullScreenPass::SharedPtr pTonemapPass;
+		Falcor::Texture::SharedPtr        pLutTexture;
+		bool                              useLut = false;
 
 		Falcor::Camera::SharedPtr pCamera;
 		Falcor::float3 cameraStartPos;

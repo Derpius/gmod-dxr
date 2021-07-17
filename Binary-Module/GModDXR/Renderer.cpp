@@ -15,22 +15,36 @@ namespace GModDXR
 			resetAccumulation = true;
 		}
 
-		if (auto tonemapGroup = w.group("Tonemapping", true)) {
-			tonemapGroup.var("Exposure Compensation", exposureCompensation, -12.f, 12.f, 0.1f, false, "%.1f");
-			tonemapGroup.checkbox("Use White Balance", useWhiteBalance, false);
-			tonemapGroup.var("White Point (in kelvin)", whitePoint, 1905.f, 25000.f, 5.f, false, "%.0f");
+		if (auto group = w.group("Colour Grading", true)) {
+			group.var("Exposure Compensation", exposureCompensation, -12.f, 12.f, 0.1f, false, "%.1f");
+			group.checkbox("Use White Balance", useWhiteBalance, false);
+			group.var("White Point (in kelvin)", whitePoint, 1905.f, 25000.f, 5.f, false, "%.0f");
 
 			float3 white = currentWhite;
 			white = white / std::max(std::max(white.r, white.g), white.b);
-			tonemapGroup.rgbColor("", white, false);
+			group.rgbColor("", white, false);
+
+			group.checkbox("Use LUT", useLut);
+			if (group.button("Load")) {
+				std::string filename;
+				if (openFileDialog(Bitmap::getFileDialogFilters(), filename))
+					pLutTexture = Texture::createFromFile(filename, false, false, ResourceBindFlags::ShaderResource);
+			}
+
+			if (pLutTexture && group.button("Clear", true)) pLutTexture = nullptr;
+
+			if (pLutTexture) {
+				group.text("LUT Path: " + pLutTexture->getSourceFilename());
+				group.image("LUT Texture", pLutTexture, float2(512.f));
+			}
 		}
 
-		if (auto antialiasGroup = w.group("Antialiasing")) {
-			antialiasGroup.checkbox("Enabled", antialiasToggle);
-			antialiasGroup.var("Sub-Pixel Quality", fxaaQualitySubPix, 0.f, 1.f, 0.001f);
-			antialiasGroup.var("Edge Threshold", fxaaQualityEdgeThreshold, 0.f, 1.f, 0.001f);
-			antialiasGroup.var("Edge Threshold Min", fxaaQualityEdgeThresholdMin, 0.f, 1.f, 0.001f);
-			antialiasGroup.checkbox("Early out", fxaaEarlyOut);
+		if (auto group = w.group("Antialiasing")) {
+			group.checkbox("Enabled", antialiasToggle);
+			group.var("Sub-Pixel Quality", fxaaQualitySubPix, 0.f, 1.f, 0.001f);
+			group.var("Edge Threshold", fxaaQualityEdgeThreshold, 0.f, 1.f, 0.001f);
+			group.var("Edge Threshold Min", fxaaQualityEdgeThresholdMin, 0.f, 1.f, 0.001f);
+			group.checkbox("Early out", fxaaEarlyOut);
 		}
 
 		if (auto sceneGroup = w.group("Scene", true)) pScene->renderUI(w);
@@ -261,10 +275,13 @@ namespace GModDXR
 		float3x3 whiteBalanceTransform = useWhiteBalance ? calculateWhiteBalanceTransformRGB_Rec709(whitePoint) : glm::identity<float3x3>();
 		currentWhite = glm::inverse(whiteBalanceTransform) * float3(1.f);
 
-		pTonemapPass["gSampler"] = pLinearSampler;
-		pTonemapPass["gInput"] = pPostProcessingOutput;
+		auto pCB = pTonemapPass["PerFrameCB"];
+		pTonemapPass["gSampler"]   = pLinearSampler;
+		pTonemapPass["gInput"]     = pPostProcessingOutput;
 		pTonemapPass["gLuminance"] = pPostProcessingFbo->getColorTexture(0);
-		pTonemapPass["PerFrameCB"]["gColourTransform"] = static_cast<float3x4>(whiteBalanceTransform * pow(2.f, exposureCompensation));
+		pTonemapPass["gLut"]       = pLutTexture;
+		pCB["useLut"]              = useLut;
+		pCB["gColourTransform"]    = static_cast<float3x4>(whiteBalanceTransform * pow(2.f, exposureCompensation));
 		pTonemapPass->execute(pContext, std::make_shared<Fbo>(*pTargetFbo));
 
 		// Increment sample index
