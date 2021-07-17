@@ -8,7 +8,9 @@ The iterative path tracer currently handles diffuse and specular lobes of the Fa
 
 The accumulator and tonemapper shaders are modified versions of those found in Falcor's [accumulation](https://github.com/NVIDIAGameWorks/Falcor/blob/master/Source/RenderPasses/AccumulatePass) and [tonemapping](https://github.com/NVIDIAGameWorks/Falcor/tree/master/Source/RenderPasses/ToneMapper) render passes, using compensated accumulation, and ACES tonemapping with auto exposure and toggleable white balance adjustment.  
 
+![Example Render](https://github.com/Derpius/gmod-dxr/blob/master/Screenshots/PBR%20Textures.png)  
 ![Example Render](https://github.com/Derpius/gmod-dxr/blob/master/Screenshots/ragdolls.png)  
-![Example Render](https://github.com/Derpius/gmod-dxr/blob/master/Screenshots/the%20council.png)  
+
+PBR textures are made by me using Quixel Mixer and GIMP, you can get them [here](https://github.com/Derpius/gmod-dxr-pbr).  
 
 Map surfaces will be broken until I implement loading BSPs myself, as GMod's [SurfaceInfo](https://wiki.facepunch.com/gmod/SurfaceInfo) classes are missing key faces (although unlikely, this may be due to some SurfaceInfos being present on entities other than world, which I have yet to test).
