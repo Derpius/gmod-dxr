@@ -25,6 +25,14 @@ namespace GModDXR
 			tonemapGroup.rgbColor("", white, false);
 		}
 
+		if (auto antialiasGroup = w.group("Antialiasing")) {
+			antialiasGroup.checkbox("Enabled", antialiasToggle);
+			antialiasGroup.var("Sub-Pixel Quality", fxaaQualitySubPix, 0.f, 1.f, 0.001f);
+			antialiasGroup.var("Edge Threshold", fxaaQualityEdgeThreshold, 0.f, 1.f, 0.001f);
+			antialiasGroup.var("Edge Threshold Min", fxaaQualityEdgeThresholdMin, 0.f, 1.f, 0.001f);
+			antialiasGroup.checkbox("Early out", fxaaEarlyOut);
+		}
+
 		if (auto sceneGroup = w.group("Scene", true)) pScene->renderUI(w);
 	}
 
@@ -145,6 +153,8 @@ namespace GModDXR
 		pAccVars = ComputeVars::create(pAccProg->getReflector());
 		pAccState = ComputeState::create();
 
+		pAntialiasPass = FullScreenPass::create("FXAA.slang");
+
 		pLuminancePass = FullScreenPass::create("Luminance.ps.slang");
 		pTonemapPass = FullScreenPass::create("Tonemap.ps.slang");
 	}
@@ -200,7 +210,7 @@ namespace GModDXR
 			resetAccumulation = false;
 		}
 
-		Texture::SharedPtr pAccOutput = Texture::create2D(
+		Texture::SharedPtr pPostProcessingOutput = Texture::create2D(
 			resolution.x, resolution.y,
 			ResourceFormat::RGBA16Float, 1, 1, nullptr,
 			ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
@@ -209,7 +219,7 @@ namespace GModDXR
 		pAccVars["PerFrameCB"]["gSamples"] = sampleIndex - accumulatingSince;
 		pAccVars["PerFrameCB"]["gResolution"] = resolution;
 		pAccVars["gInput"] = pRtOut;
-		pAccVars["gOutput"] = pAccOutput;
+		pAccVars["gOutput"] = pPostProcessingOutput;
 		pAccVars["gSumBuffer"] = pAccBufferSum;
 		pAccVars["gCorrectionBuffer"] = pAccBufferCorr;
 
@@ -217,17 +227,34 @@ namespace GModDXR
 		pAccState->setProgram(pAccProg);
 		pContext->dispatch(pAccState.get(), pAccVars.get(), numGroups);
 
-		// Luminance pass
-		Fbo::SharedPtr pLuminanceFbo;
-		{
-			Fbo::Desc lumFboDesc;
-			lumFboDesc.setColorTarget(0, ResourceFormat::RGBA32Float);
-			pLuminanceFbo = Fbo::create2D(resolution.x, resolution.y, lumFboDesc, 1, Fbo::kAttachEntireMipLevel);
+		Fbo::Desc fboDesc;
+		fboDesc.setColorTarget(0, ResourceFormat::RGBA32Float);
+		Fbo::SharedPtr pPostProcessingFbo = Fbo::create2D(resolution.x, resolution.y, fboDesc, 1, Fbo::kAttachEntireMipLevel);
+
+		// Antialiasing pass
+		if (antialiasToggle) {
+			pAntialiasPass["gSampler"] = pLinearSampler;
+			pAntialiasPass["gSrc"] = pPostProcessingOutput;
+
+			float2 rcpFrame = 1.f / float2(resolution.x, resolution.y);
+
+			auto pCB = pAntialiasPass["PerFrameCB"];
+			pCB["rcpTexDim"] = rcpFrame;
+			pCB["qualitySubPix"] = fxaaQualitySubPix;
+			pCB["qualityEdgeThreshold"] = fxaaQualityEdgeThreshold;
+			pCB["qualityEdgeThresholdMin"] = fxaaQualityEdgeThresholdMin;
+			pCB["earlyOut"] = fxaaEarlyOut;
+
+			pAntialiasPass->execute(pContext, pPostProcessingFbo);
+			pPostProcessingOutput = pPostProcessingFbo->getColorTexture(0);
+			pPostProcessingFbo = Fbo::create2D(resolution.x, resolution.y, fboDesc, 1, Fbo::kAttachEntireMipLevel); // Redefine FBO to break link to texture ptr
 		}
+
+		// Luminance pass
 		pLuminancePass["gColorSampler"] = pLinearSampler;
-		pLuminancePass["gColorTex"] = pAccOutput;
-		pLuminancePass->execute(pContext, pLuminanceFbo);
-		pLuminanceFbo->getColorTexture(0)->generateMips(pContext);
+		pLuminancePass["gColorTex"] = pPostProcessingOutput;
+		pLuminancePass->execute(pContext, pPostProcessingFbo);
+		pPostProcessingFbo->getColorTexture(0)->generateMips(pContext);
 
 		// Tonemapping pass
 		// Calculate white balance transform for colour transform
@@ -235,8 +262,8 @@ namespace GModDXR
 		currentWhite = glm::inverse(whiteBalanceTransform) * float3(1.f);
 
 		pTonemapPass["gSampler"] = pLinearSampler;
-		pTonemapPass["gInput"] = pAccOutput;
-		pTonemapPass["gLuminance"] = pLuminanceFbo->getColorTexture(0);
+		pTonemapPass["gInput"] = pPostProcessingOutput;
+		pTonemapPass["gLuminance"] = pPostProcessingFbo->getColorTexture(0);
 		pTonemapPass["PerFrameCB"]["gColourTransform"] = static_cast<float3x4>(whiteBalanceTransform * pow(2.f, exposureCompensation));
 		pTonemapPass->execute(pContext, std::make_shared<Fbo>(*pTargetFbo));
 

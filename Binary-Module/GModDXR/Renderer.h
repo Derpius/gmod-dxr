@@ -54,6 +54,13 @@ namespace GModDXR
 		Falcor::uint accumulatingSince = 0;
 		bool resetAccumulation = false;
 
+		Falcor::FullScreenPass::SharedPtr pAntialiasPass;
+		bool                              antialiasToggle = true;
+		float                             fxaaQualitySubPix = 0.75f;
+		float                             fxaaQualityEdgeThreshold = 0.166f;
+		float                             fxaaQualityEdgeThresholdMin = 0.0833f;
+		bool                              fxaaEarlyOut = true;
+
 		Falcor::FullScreenPass::SharedPtr pLuminancePass;
 		Falcor::FullScreenPass::SharedPtr pTonemapPass;
 
