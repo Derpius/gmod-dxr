@@ -6,10 +6,10 @@ Uses PNG textures placed in `GarrysMod/bin/win64/Data/Overrides/materials` with 
 
 The iterative path tracer currently handles diffuse and specular lobes of the Falcor BSDF, as well as direct lighting using analytic lights and emissives and envmap sampling with MIS (multiple importance sampling).  
 
-The accumulator and tonemapper shaders are modified versions of those found in Falcor's [accumulation](https://github.com/NVIDIAGameWorks/Falcor/blob/master/Source/RenderPasses/AccumulatePass) and [tonemapping](https://github.com/NVIDIAGameWorks/Falcor/tree/master/Source/RenderPasses/ToneMapper) render passes, using compensated accumulation, and ACES tonemapping with auto exposure and toggleable white balance adjustment.  
+The accumulator and tonemapper shaders are modified versions of those found in Falcor's [accumulation](https://github.com/NVIDIAGameWorks/Falcor/tree/master/Source/RenderPasses/AccumulatePass) and [tonemapping](https://github.com/NVIDIAGameWorks/Falcor/tree/master/Source/RenderPasses/ToneMapper) render passes, using compensated accumulation, and ACES tonemapping with auto exposure and toggleable white balance adjustment.  
 
-![Example Render](https://github.com/Derpius/gmod-dxr/blob/master/Screenshots/PBR%20Textures.png)  
-![Example Render](https://github.com/Derpius/gmod-dxr/blob/master/Screenshots/ragdolls.png)  
+![Example Render](https://github.com/Derpius/gmod-dxr/raw/master/Screenshots/PBR%20Textures.png)  
+![Example Render](https://github.com/Derpius/gmod-dxr/raw/master/Screenshots/ragdolls.png)  
 
 PBR textures are made by me using Quixel Mixer and GIMP, you can get them [here](https://github.com/Derpius/gmod-dxr-pbr).  
 
